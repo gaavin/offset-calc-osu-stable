@@ -31,11 +31,10 @@ func run() error {
 	watch := flag.Bool("watch", true, "keep sampling osu! processes (default; use -once to exit)")
 	poll := flag.Duration("poll", 50*time.Millisecond, "how often to read osu! memory")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `osu-offset %s — recommend a universal Offset from live osu!stable hit error
+		fmt.Fprintf(os.Stderr, `osu-offset %s — recommend a universal Offset from osu!stable hit error
 
 Watches running osu!.exe processes (Windows, or Wine on Linux / NixOS) and
 reads the current play's hit-error list and universal Offset from memory.
-That uses the audio setup you have right now, unlike old .osr replays.
 
 Leave it running. Play maps. Each finished play with enough hits prints the
 Offset to set in Options → Audio → Offset.
@@ -50,7 +49,7 @@ Offset to set in Options → Audio → Offset.
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	if !*jsonOut {
-		fmt.Fprintf(os.Stderr, "osu-offset %s — watching for osu!.exe (live hit error, not replays)\n", version)
+		fmt.Fprintf(os.Stderr, "osu-offset %s — watching for osu!.exe\n", version)
 		fmt.Fprintf(os.Stderr, "Need ≥ %d timed hits on a standard play. Ctrl+C to stop.\n", *minHits)
 	}
 

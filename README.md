@@ -24,8 +24,6 @@ osu-offset          # watch osu!.exe; print after every usable play
 2. Play a map with at least **50 timed hits** (standard mode).
 3. When the play ends, copy the printed Offset into **Options → Audio → Offset**.
 
-> **What it reads:** live hit-error values and your current universal Offset from process memory — not `.osr` replays or config files on disk.
-
 ---
 
 ## 🎯 How It Works
@@ -170,7 +168,7 @@ Change the Offset in-game while `osu-offset` is running — the live read update
 ## 📝 Notes
 
 - Only **osu!standard** hit errors are used.
-- Replay *watching* in the client is ignored (those hits are not yours with the current Offset). Old `.osr` files are never scanned.
+- Replay *watching* in the client is ignored (those hits are not yours with the current Offset).
 - Signatures match current osu!stable (same family as [tosu](https://github.com/tosuapp/tosu) / gosumemory). A game update can move them.
 
 ---
