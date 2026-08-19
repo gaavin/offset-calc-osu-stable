@@ -13,6 +13,7 @@ import (
 
 	"github.com/gaavin/offset-calc-osu-stable/internal/hits"
 	"github.com/gaavin/offset-calc-osu-stable/internal/osumem"
+	"github.com/gaavin/offset-calc-osu-stable/internal/tui"
 )
 
 var version = "dev"
@@ -44,13 +45,13 @@ Offset to set in Options → Audio → Offset.
 	}
 	flag.Parse()
 	keepWatching := *watch && !*once
+	ui := tui.New(tui.Enabled(*jsonOut), os.Stdout, os.Stderr)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	if !*jsonOut {
-		fmt.Fprintf(os.Stderr, "osu-offset %s — watching for osu!.exe\n", version)
-		fmt.Fprintf(os.Stderr, "Need ≥ %d timed hits on a standard play. Ctrl+C to stop.\n", *minHits)
+		ui.Banner(version, *minHits)
 	}
 
 	waitingLogged := false
@@ -64,7 +65,7 @@ Offset to set in Options → Audio → Offset.
 		proc, err := osumem.OpenOsu()
 		if err != nil {
 			if !waitingLogged && !*jsonOut {
-				fmt.Fprintln(os.Stderr, "waiting for osu!.exe …")
+				ui.Waiting("waiting for osu!.exe …")
 				waitingLogged = true
 			}
 			if err := waitOrStop(stop, time.Second); err != nil {
@@ -76,7 +77,7 @@ Offset to set in Options → Audio → Offset.
 		if err != nil {
 			proc.Close()
 			if !waitingLogged && !*jsonOut {
-				fmt.Fprintln(os.Stderr, "osu!.exe found; waiting until memory signatures are readable …")
+				ui.Waiting("osu!.exe found; waiting until memory signatures are readable …")
 				waitingLogged = true
 			}
 			if err := waitOrStop(stop, time.Second); err != nil {
@@ -86,7 +87,7 @@ Offset to set in Options → Audio → Offset.
 		}
 		waitingLogged = false
 		if !*jsonOut {
-			fmt.Fprintf(os.Stderr, "attached to osu!.exe pid %d\n", rd.Pid())
+			ui.Attached(rd.Pid())
 		}
 
 		err = sampleSession(sessionOpts{
@@ -96,11 +97,12 @@ Offset to set in Options → Audio → Offset.
 			poll:         *poll,
 			jsonOut:      *jsonOut,
 			keepWatching: keepWatching,
+			ui:           ui,
 		})
 		proc.Close()
 		if errors.Is(err, osumem.ErrGone) {
 			if !*jsonOut {
-				fmt.Fprintln(os.Stderr, "osu!.exe exited; watching for it to come back …")
+				ui.ProcessExited()
 			}
 			waitingLogged = true
 			continue
@@ -127,6 +129,7 @@ type sessionOpts struct {
 	poll         time.Duration
 	jsonOut      bool
 	keepWatching bool
+	ui           *tui.Display
 }
 
 func sampleSession(o sessionOpts) error {
@@ -142,7 +145,7 @@ func sampleSession(o sessionOpts) error {
 		select {
 		case <-o.stop:
 			if len(best) >= o.minHits {
-				return finish(o.rd, best, o.jsonOut)
+				return finish(o.rd, best, o.jsonOut, o.ui)
 			}
 			if len(best) == 0 {
 				return fmt.Errorf("interrupted before any hits")
@@ -169,12 +172,12 @@ func sampleSession(o sessionOpts) error {
 				inPlay = true
 				best = nil
 				if !o.jsonOut {
-					fmt.Fprintln(os.Stderr, "play started")
+					o.ui.PlayStarted()
 				}
 			}
 			if mode, err := o.rd.Mode(); err == nil && mode != 0 {
 				if !o.jsonOut {
-					fmt.Fprintf(os.Stderr, "\r  skipping non-standard mode %d          ", mode)
+					o.ui.SkipMode(mode)
 				}
 				best = nil
 				continue
@@ -186,11 +189,19 @@ func sampleSession(o sessionOpts) error {
 			if !o.jsonOut && len(best) > 0 {
 				med := hits.Median(hits.Int32ToFloat(best))
 				cur, err := o.rd.Offset()
+				ps := tui.PlayStats{
+					HitCount: len(best),
+					Errors:   hits.Int32ToFloat(best),
+					Median:   med,
+					MinHits:  o.minHits,
+				}
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "\r  %d hits  median %+.1f ms  (offset not readable yet)     ", len(best), med)
+					o.ui.UpdatePlay(ps)
 				} else {
-					rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
-					fmt.Fprintf(os.Stderr, "\r  %d hits  offset %d ms  median %+.1f ms  → Offset %d     ", len(best), cur, med, rec)
+					ps.HasOffset = true
+					ps.CurOffset = int(cur)
+					ps.Recommend = hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
+					o.ui.UpdatePlay(ps)
 				}
 			}
 			continue
@@ -198,34 +209,31 @@ func sampleSession(o sessionOpts) error {
 
 		if inPlay {
 			inPlay = false
-			if !o.jsonOut {
-				fmt.Fprintln(os.Stderr)
-			}
 			if len(best) < o.minHits {
 				if !o.jsonOut {
-					fmt.Fprintf(os.Stderr, "play ended with %d hits (need %d); waiting for another map\n", len(best), o.minHits)
+					o.ui.PlayEndedShort(len(best), o.minHits)
 				}
 				best = nil
 				continue
 			}
 			if o.keepWatching {
-				if err := finish(o.rd, best, o.jsonOut); err != nil {
+				if err := finish(o.rd, best, o.jsonOut, o.ui); err != nil {
 					return err
 				}
 				best = nil
 				if !o.jsonOut {
-					fmt.Fprintln(os.Stderr, "watching for another play")
+					o.ui.WatchingAnother()
 				}
 				continue
 			}
-			return finish(o.rd, best, o.jsonOut)
+			return finish(o.rd, best, o.jsonOut, o.ui)
 		}
 	}
 }
 
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
-func finish(rd *osumem.Reader, raw []int32, jsonOut bool) error {
+func finish(rd *osumem.Reader, raw []int32, jsonOut bool, ui *tui.Display) error {
 	cur, err := rd.Offset()
 	if err != nil {
 		return fmt.Errorf("read offset: %w", err)
@@ -250,21 +258,17 @@ func finish(rd *osumem.Reader, raw []int32, jsonOut bool) error {
 		return enc.Encode(out)
 	}
 
-	fmt.Printf("Hits:               %d\n", len(errors))
-	fmt.Printf("Median hit error:   %+.1f ms\n", med)
-	fmt.Printf("Mean hit error:     %+.1f ms\n", mean)
-	fmt.Printf("Unstable rate:      %.1f\n", ur)
-	fmt.Printf("Current Offset:     %d ms\n", cur)
-	fmt.Printf("Recommended Offset: %d ms\n", rec)
-	delta := rec - int(cur)
-	switch {
-	case delta == 0:
-		fmt.Println("That matches your current Offset — leave it.")
-	case med < 0:
-		fmt.Printf("Hits are ~%.1f ms early. Raise Offset by %d ms.\n", -round1(med), delta)
-	default:
-		fmt.Printf("Hits are ~%.1f ms late. Lower Offset by %d ms.\n", round1(med), -delta)
+	if !jsonOut {
+		ui.PlayEndedClear()
 	}
-	fmt.Println("Set it in Options → Audio → Offset.")
+	ui.PrintResult(tui.Result{
+		Hits:          len(errors),
+		Median:        med,
+		Mean:          mean,
+		UnstableRate:  ur,
+		CurrentOffset: int(cur),
+		Recommend:     rec,
+		Errors:        errors,
+	})
 	return nil
 }

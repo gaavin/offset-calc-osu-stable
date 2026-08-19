@@ -24,7 +24,7 @@
             pname = "osu-offset";
             version = "0.1.0";
             src = self;
-            vendorHash = "sha256-nfb3/tBa8rltA5ru6/Phzd5fYoREf5G4KiOhXL4o7Kc=";
+            vendorHash = "sha256-wwozNBqlMnIU4EYU9SzRX41TJhwA75d0OFm2d5cACwE=";
             subPackages = [ "cmd/osu-offset" ];
             env.CGO_ENABLED = "0";
             meta = {
