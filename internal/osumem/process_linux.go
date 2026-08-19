@@ -19,6 +19,10 @@ type linuxProc struct {
 
 func (p linuxProc) Pid() int     { return p.pid }
 func (p linuxProc) Close() error { return nil }
+func (p linuxProc) Alive() bool {
+	_, err := os.Stat(fmt.Sprintf("/proc/%d", p.pid))
+	return err == nil
+}
 
 func (p linuxProc) ReadAt(b []byte, off int64) (int, error) {
 	if len(b) == 0 {
@@ -84,6 +88,8 @@ func findOsuProcess() (Process, error) {
 	if err != nil {
 		return nil, err
 	}
+	bestPID := 0
+	var bestRSS int64
 	for _, e := range ents {
 		pid, err := strconv.Atoi(e.Name())
 		if err != nil {
@@ -93,14 +99,43 @@ func findOsuProcess() (Process, error) {
 		if err != nil {
 			continue
 		}
-		s := strings.ToLower(string(bytes.ReplaceAll(cmd, []byte{0}, []byte{' '})))
-		if strings.Contains(s, "osu!lazer") || strings.Contains(s, "osu!framework") {
+		s := string(bytes.ReplaceAll(cmd, []byte{0}, []byte{' '}))
+		if !isOsuStableCmd(s) {
 			continue
 		}
-		if !strings.Contains(s, "osu!.exe") {
-			continue
+		rss := procRSS(pid)
+		if bestPID == 0 || rss >= bestRSS {
+			bestPID = pid
+			bestRSS = rss
 		}
-		return linuxProc{pid: pid}, nil
 	}
-	return nil, fmt.Errorf("no osu!.exe process")
+	if bestPID == 0 {
+		return nil, fmt.Errorf("no osu!.exe process")
+	}
+	return linuxProc{pid: bestPID}, nil
+}
+
+func procRSS(pid int) int64 {
+	f, err := os.Open(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "VmRSS:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0
+		}
+		n, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return 0
+		}
+		return n
+	}
+	return 0
 }

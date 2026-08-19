@@ -21,6 +21,11 @@ func (p winProc) Close() error {
 	return windows.CloseHandle(p.handle)
 }
 
+func (p winProc) Alive() bool {
+	ev, err := windows.WaitForSingleObject(p.handle, 0)
+	return err == nil && ev == uint32(windows.WAIT_TIMEOUT)
+}
+
 func (p winProc) ReadAt(b []byte, off int64) (int, error) {
 	if len(b) == 0 {
 		return 0, nil

@@ -53,6 +53,8 @@ func (r *Reader) Close() error { return r.proc.Close() }
 
 func (r *Reader) Pid() int { return r.proc.Pid() }
 
+func (r *Reader) Alive() bool { return r.proc.Alive() }
+
 func (r *Reader) Status() (int32, error) {
 	return DerefI32(r.proc, r.statusPtr)
 }

@@ -1,5 +1,5 @@
 {
-  description = "Recommend a universal offset for osu!stable from live hit error";
+  description = "Recommend a universal offset for osu!stable from live process hit error";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -28,7 +28,7 @@
             subPackages = [ "cmd/osu-offset" ];
             env.CGO_ENABLED = "0";
             meta = {
-              description = "Recommend osu!stable universal offset from live hit error";
+              description = "Watch osu!.exe and recommend Offset from live hit error";
               mainProgram = "osu-offset";
             };
           };

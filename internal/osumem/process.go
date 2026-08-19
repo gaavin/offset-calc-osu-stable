@@ -2,9 +2,17 @@ package osumem
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
+
+// ErrNotRunning is returned when no osu!stable process is found.
+var ErrNotRunning = errors.New("osu!.exe not running")
+
+// ErrGone is returned when a previously attached process can no longer be read.
+var ErrGone = errors.New("osu! process exited")
 
 type Region struct {
 	Start int64
@@ -16,8 +24,17 @@ type Region struct {
 type Process interface {
 	io.ReaderAt
 	Pid() int
+	Alive() bool
 	Close() error
 	Maps() ([]Region, error)
+}
+
+func isOsuStableCmd(s string) bool {
+	s = strings.ToLower(s)
+	if strings.Contains(s, "osu!lazer") || strings.Contains(s, "osu!framework") {
+		return false
+	}
+	return strings.Contains(s, "osu!.exe")
 }
 
 func ReadI32(r io.ReaderAt, addr int64) (int32, error) {
@@ -65,7 +82,7 @@ func DerefI32(r io.ReaderAt, addr int64) (int32, error) {
 func OpenOsu() (Process, error) {
 	p, err := findOsuProcess()
 	if err != nil {
-		return nil, fmt.Errorf("osu!.exe not running: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrNotRunning, err)
 	}
 	return p, nil
 }

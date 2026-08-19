@@ -2,12 +2,12 @@
 
 Recommend a **universal Offset** for osu!stable from **live hit error**, not old replays.
 
-1. Attach to a running `osu!.exe` (Windows, or Wine on Linux / NixOS).
+1. Watch running `osu!.exe` processes (Windows, or Wine on Linux / NixOS). If the game is not up yet, wait and attach when it is.
 2. Read the current play’s hit-error list from process memory (the same values as the in-game error bar).
 3. Take the **median** error (need at least 50 timed hits).
-4. Print the exact Offset to set: `currentOffset - medianError`.
+4. Print the exact Offset to set: `currentOffset - medianError`. Keep watching for the next play (and re-attach if osu! restarts).
 
-That uses the Offset, audio device, and Wine latency you have **right now**. Old `.osr` files can have been played with a different Offset.
+That uses the Offset, audio device, and Wine latency you have **right now**. It does **not** reconstruct offset from old `.osr` files.
 
 On Wine (including [nix-osu-stable](https://github.com/gaavin/nix-osu-stable)), audio is usually late, so the suggestion is often a **negative** Offset.
 
@@ -75,18 +75,16 @@ GOOS=windows GOARCH=amd64 go build -o osu-offset.exe ./cmd/osu-offset
 
 ## Run
 
-Start osu!stable first, then:
-
 ```bash
-osu-offset
-osu-offset -watch          # print after every play
+osu-offset                 # watch osu!.exe; print after every usable play
+osu-offset -once           # exit after the first recommendation
 osu-offset -json
 osu-offset -debug-paths    # show install-path candidates and exit
-osu-offset -apply          # write Offset into the osu! config (close the game first)
+osu-offset -apply -once    # write Offset into the osu! config (close the game first)
 osu-offset -dir /path/to/osu
 ```
 
-Play a map. When the play ends, it prints the Offset to set in **Options → Audio → Offset**.
+You do not need to start the game first. `osu-offset` waits for `osu!.exe`, attaches, and keeps monitoring. Play a map; when the play ends it prints the Offset to set in **Options → Audio → Offset**.
 
 On Linux, the reader needs to inspect osu!’s Wine process (`process_vm_readv`). If attach fails, run as the same user as the game; you may need `kernel.yama.ptrace_scope=0` (or a cap that allows ptrace).
 
@@ -128,7 +126,8 @@ nix-osu-stable’s README ballpark is about **−40 to −35 ms** in normal mode
 | --- | --- | --- |
 | `-dir` | auto | osu!stable folder (config / `-apply`) |
 | `-min-hits` | 50 | min timed hits before recommending |
-| `-watch` | off | keep going after each play |
+| `-watch` | on | keep monitoring processes after each play |
+| `-once` | off | exit after the first usable play |
 | `-poll` | 50ms | memory sample interval |
 | `-apply` | off | write `Offset = …` into the user cfg |
 | `-json` | off | machine-readable output |
@@ -137,6 +136,6 @@ nix-osu-stable’s README ballpark is about **−40 to −35 ms** in normal mode
 ## Notes
 
 - Only **osu!standard** hit errors are used.
-- Replay watching is ignored (those hits are not yours with the current Offset).
+- Replay *watching* in the client is ignored (those hits are not yours with the current Offset). Old `.osr` files are never scanned.
 - Signatures match current osu!stable (same family as [tosu](https://github.com/tosuapp/tosu) / gosumemory). A game update can move them.
 - `-apply` while osu! is running is often undone when the client exits — close it first.

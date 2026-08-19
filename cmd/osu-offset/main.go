@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -29,22 +30,26 @@ func run() error {
 	apply := flag.Bool("apply", false, "write the recommended Offset into the osu! config")
 	jsonOut := flag.Bool("json", false, "print JSON instead of text")
 	minHits := flag.Int("min-hits", 50, "minimum timed hits before recommending")
-	watch := flag.Bool("watch", false, "keep sampling after each play instead of exiting")
+	once := flag.Bool("once", false, "exit after the first usable play instead of keeping watch")
+	watch := flag.Bool("watch", true, "keep sampling osu! processes (default; use -once to exit)")
 	poll := flag.Duration("poll", 50*time.Millisecond, "how often to read osu! memory")
 	debugPaths := flag.Bool("debug-paths", false, "print install-path candidates and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `osu-offset %s — recommend a universal Offset from live osu!stable hit error
 
-Attaches to a running osu!.exe and reads the current play's hit-error list
-from memory (the same values as the in-game error bar). That uses the Offset
-and audio setup you have right now, unlike old .osr replays.
+Watches running osu!.exe processes (Windows, or Wine on Linux / NixOS) and
+reads the current play's hit-error list from memory (the same values as the
+in-game error bar). That uses the Offset and audio setup you have right now,
+unlike old .osr replays.
 
-Play a map, then set Options → Audio → Offset to the printed value.
+Leave it running. Play maps. Each finished play with enough hits prints the
+Offset to set in Options → Audio → Offset.
 
 `, version)
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	keepWatching := *watch && !*once
 
 	if *debugPaths {
 		return stable.PrintDebug(os.Stdout)
@@ -55,80 +60,157 @@ Play a map, then set Options → Audio → Offset to the printed value.
 		return instErr
 	}
 
-	proc, err := osumem.OpenOsu()
-	if err != nil {
-		return err
-	}
-	defer proc.Close()
-
-	rd, err := osumem.Attach(proc)
-	if err != nil {
-		return fmt.Errorf("scan osu! memory (is this osu!stable, not lazer?): %w", err)
-	}
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	if !*jsonOut {
-		fmt.Fprintf(os.Stderr, "osu-offset %s — reading live hit error from osu!.exe pid %d\n", version, rd.Pid())
+		fmt.Fprintf(os.Stderr, "osu-offset %s — watching for osu!.exe (live hit error, not replays)\n", version)
 		if inst != nil {
 			fmt.Fprintf(os.Stderr, "Current Offset: %d ms (%s)\n", inst.Offset, inst.Cfg)
 		} else {
 			fmt.Fprintf(os.Stderr, "Could not find osu! config (%v); Offset assumed 0.\n", instErr)
 		}
-		fmt.Fprintf(os.Stderr, "Enter a map. Recommendation prints when the play ends (need ≥ %d hits).\n", *minHits)
+		fmt.Fprintf(os.Stderr, "Need ≥ %d timed hits on a standard play. Ctrl+C to stop.\n", *minHits)
 	}
 
-	ctxStop := make(chan os.Signal, 1)
-	signal.Notify(ctxStop, os.Interrupt, syscall.SIGTERM)
+	waitingLogged := false
+	for {
+		select {
+		case <-stop:
+			return fmt.Errorf("interrupted before any hits")
+		default:
+		}
+
+		proc, err := osumem.OpenOsu()
+		if err != nil {
+			if !waitingLogged && !*jsonOut {
+				fmt.Fprintln(os.Stderr, "waiting for osu!.exe …")
+				waitingLogged = true
+			}
+			if err := waitOrStop(stop, time.Second); err != nil {
+				return fmt.Errorf("interrupted before any hits")
+			}
+			continue
+		}
+		rd, err := osumem.Attach(proc)
+		if err != nil {
+			proc.Close()
+			if !waitingLogged && !*jsonOut {
+				fmt.Fprintln(os.Stderr, "osu!.exe found; waiting until memory signatures are readable …")
+				waitingLogged = true
+			}
+			if err := waitOrStop(stop, time.Second); err != nil {
+				return fmt.Errorf("interrupted before any hits")
+			}
+			continue
+		}
+		waitingLogged = false
+		if !*jsonOut {
+			fmt.Fprintf(os.Stderr, "attached to osu!.exe pid %d\n", rd.Pid())
+		}
+
+		err = sampleSession(sessionOpts{
+			rd:           rd,
+			inst:         inst,
+			stop:         stop,
+			minHits:      *minHits,
+			poll:         *poll,
+			jsonOut:      *jsonOut,
+			keepWatching: keepWatching,
+			apply:        *apply && !keepWatching,
+		})
+		proc.Close()
+		if errors.Is(err, osumem.ErrGone) {
+			if !*jsonOut {
+				fmt.Fprintln(os.Stderr, "osu!.exe exited; watching for it to come back …")
+			}
+			waitingLogged = true
+			continue
+		}
+		return err
+	}
+}
+
+func waitOrStop(stop <-chan os.Signal, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-stop:
+		return fmt.Errorf("stopped")
+	case <-t.C:
+		return nil
+	}
+}
+
+type sessionOpts struct {
+	rd           *osumem.Reader
+	inst         *stable.Install
+	stop         <-chan os.Signal
+	minHits      int
+	poll         time.Duration
+	jsonOut      bool
+	keepWatching bool
+	apply        bool
+}
+
+func sampleSession(o sessionOpts) error {
+	tick := time.NewTicker(o.poll)
+	defer tick.Stop()
 
 	var (
 		inPlay bool
 		best   []int32
 	)
 
-	tick := time.NewTicker(*poll)
-	defer tick.Stop()
-
 	for {
 		select {
-		case <-ctxStop:
-			if len(best) >= *minHits {
-				return finish(inst, best, *apply, *jsonOut)
+		case <-o.stop:
+			if len(best) >= o.minHits {
+				return finish(o.inst, best, o.apply, o.jsonOut)
 			}
 			if len(best) == 0 {
 				return fmt.Errorf("interrupted before any hits")
 			}
-			return fmt.Errorf("interrupted with only %d hits (need %d)", len(best), *minHits)
+			return fmt.Errorf("interrupted with only %d hits (need %d)", len(best), o.minHits)
 		case <-tick.C:
 		}
 
-		st, err := rd.Status()
+		if !o.rd.Alive() {
+			return osumem.ErrGone
+		}
+
+		st, err := o.rd.Status()
 		if err != nil {
+			if !o.rd.Alive() {
+				return osumem.ErrGone
+			}
 			return fmt.Errorf("read status: %w", err)
 		}
 
-		playing := st == osumem.StatusPlaying && !rd.WatchingReplay()
+		playing := st == osumem.StatusPlaying && !o.rd.WatchingReplay()
 		if playing {
 			if !inPlay {
 				inPlay = true
 				best = nil
-				if !*jsonOut {
+				if !o.jsonOut {
 					fmt.Fprintln(os.Stderr, "play started")
 				}
 			}
-			if mode, err := rd.Mode(); err == nil && mode != 0 {
-				if !*jsonOut {
+			if mode, err := o.rd.Mode(); err == nil && mode != 0 {
+				if !o.jsonOut {
 					fmt.Fprintf(os.Stderr, "\r  skipping non-standard mode %d          ", mode)
 				}
 				best = nil
 				continue
 			}
-			errs, err := rd.HitErrors()
+			errs, err := o.rd.HitErrors()
 			if err == nil && len(errs) >= len(best) {
 				best = append([]int32(nil), errs...)
 			}
-			if !*jsonOut && len(best) > 0 {
+			if !o.jsonOut && len(best) > 0 {
 				cur := 0
-				if inst != nil {
-					cur = inst.Offset
+				if o.inst != nil {
+					cur = o.inst.Offset
 				}
 				med := hits.Median(hits.Int32ToFloat(best))
 				rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
@@ -139,27 +221,27 @@ Play a map, then set Options → Audio → Offset to the printed value.
 
 		if inPlay {
 			inPlay = false
-			if !*jsonOut {
+			if !o.jsonOut {
 				fmt.Fprintln(os.Stderr)
 			}
-			if len(best) < *minHits {
-				if !*jsonOut {
-					fmt.Fprintf(os.Stderr, "play ended with %d hits (need %d); waiting for another map\n", len(best), *minHits)
+			if len(best) < o.minHits {
+				if !o.jsonOut {
+					fmt.Fprintf(os.Stderr, "play ended with %d hits (need %d); waiting for another map\n", len(best), o.minHits)
 				}
 				best = nil
 				continue
 			}
-			if *watch {
-				if err := finish(inst, best, false, *jsonOut); err != nil {
+			if o.keepWatching {
+				if err := finish(o.inst, best, false, o.jsonOut); err != nil {
 					return err
 				}
 				best = nil
-				if !*jsonOut {
-					fmt.Fprintln(os.Stderr, "waiting for another play (-watch)")
+				if !o.jsonOut {
+					fmt.Fprintln(os.Stderr, "watching for another play")
 				}
 				continue
 			}
-			return finish(inst, best, *apply, *jsonOut)
+			return finish(o.inst, best, o.apply, o.jsonOut)
 		}
 	}
 }
