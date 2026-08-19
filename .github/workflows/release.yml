@@ -103,7 +103,7 @@ jobs:
   linux-pkg:
     needs: [version, binaries]
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - goarch: amd64
@@ -152,14 +152,14 @@ jobs:
             dist/osu-offset-${{ matrix.appimage_arch }}.flatpak.sha256
 
   publish:
-    needs: [version, binaries, linux-pkg]
+    needs: [version, binaries]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
+          name: osu-offset-binaries
+          path: release
       - name: Refuse overwrite
         env:
           GH_TOKEN: ${{ github.token }}
@@ -170,6 +170,7 @@ jobs:
             echo "release ${TAG} already exists; refusing to overwrite"
             exit 1
           fi
+          ls -la release
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
@@ -178,4 +179,30 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           overwrite_files: false
-          files: dist/*
+          files: release/*
+
+  publish-linux:
+    needs: [version, linux-pkg, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: osu-offset-linux-*
+          path: release
+          merge-multiple: true
+      - name: Attach Linux packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release/*.AppImage release/*.AppImage.sha256 release/*.flatpak release/*.flatpak.sha256)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no AppImage/Flatpak artifacts to attach"
+            exit 0
+          fi
+          ls -la "${files[@]}"
+          gh release upload "$TAG" "${files[@]}"
