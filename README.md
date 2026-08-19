@@ -2,7 +2,7 @@
 
 # osu-offset
 
-**Recommend a universal Offset for osu!stable** — from **live hit error**, not old replays.
+**Recommend a universal Offset for osu!stable** — from **live hit error**.
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Release](https://img.shields.io/github/v/release/gaavin/offset-calc-osu-stable?label=release)](https://github.com/gaavin/offset-calc-osu-stable/releases)
@@ -24,7 +24,7 @@ osu-offset          # watch osu!.exe; print after every usable play
 2. Play a map with at least **50 timed hits** (standard mode).
 3. When the play ends, copy the printed Offset into **Options → Audio → Offset**.
 
-> **What it reads:** the same hit-error values as the in-game error bar, from process memory — not `.osr` replays.
+> **What it reads:** the same hit-error values as the in-game error bar, from process memory.
 
 ---
 
