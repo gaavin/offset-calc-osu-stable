@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Cross-compile
+        run: |
+          mkdir -p dist
+          version="${GITHUB_REF_NAME:-dev}"
+          build() {
+            local goos="$1" goarch="$2"
+            local ext=""
+            if [ "$goos" = windows ]; then ext=".exe"; fi
+            local name="osu-offset-${goos}-${goarch}${ext}"
+            echo "building $name"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${version}" \
+              -o "dist/${name}" ./cmd/osu-offset
+            (cd dist && sha256sum "$name" > "${name}.sha256")
+          }
+          build linux amd64
+          build linux arm64
+          build darwin amd64
+          build darwin arm64
+          build windows amd64
+          build windows arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osu-offset-binaries
+          path: dist/*
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

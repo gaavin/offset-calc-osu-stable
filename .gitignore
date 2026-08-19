@@ -1,0 +1,7 @@
+/osu-offset
+/offset-calc-osu-stable
+/result
+/result-*
+/dist
+*.exe
+.direnv
