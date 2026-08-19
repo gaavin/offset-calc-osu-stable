@@ -1,5 +1,5 @@
 {
-  description = "Recommend a universal offset for osu!stable from recent plays (lazer-style)";
+  description = "Recommend a universal offset for osu!stable from live hit error";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -24,11 +24,11 @@
             pname = "osu-offset";
             version = "0.1.0";
             src = self;
-            vendorHash = "sha256-kMCJDqsELXcHptr8hZ/cYgMuSwCeYi3ziIaCU9UBm0w=";
+            vendorHash = "sha256-nfb3/tBa8rltA5ru6/Phzd5fYoREf5G4KiOhXL4o7Kc=";
             subPackages = [ "cmd/osu-offset" ];
             env.CGO_ENABLED = "0";
             meta = {
-              description = "Recommend osu!stable universal offset from recent replay hit error";
+              description = "Recommend osu!stable universal offset from live hit error";
               mainProgram = "osu-offset";
             };
           };

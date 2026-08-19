@@ -2,10 +2,7 @@ package stable
 
 import (
 	"bufio"
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -163,49 +160,4 @@ func (inst *Install) WriteOffset(offset int) error {
 		}
 	}
 	return os.WriteFile(inst.Cfg, []byte(strings.Join(lines, nl)), 0o644)
-}
-
-func (inst *Install) ReplayDirs() []string {
-	return []string{
-		filepath.Join(inst.Root, "Data", "r"),
-		filepath.Join(inst.Root, "Replays"),
-	}
-}
-
-func HashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := md5.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func IndexSongs(songsDir string) (map[string]string, error) {
-	idx := make(map[string]string)
-	err := filepath.Walk(songsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if !strings.EqualFold(filepath.Ext(path), ".osu") {
-			return nil
-		}
-		sum, err := HashFile(path)
-		if err != nil {
-			return nil
-		}
-		idx[sum] = path
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return idx, nil
 }

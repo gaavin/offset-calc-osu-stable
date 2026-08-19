@@ -1,15 +1,17 @@
 # osu-offset
 
-Recommend a **universal Offset** for osu!stable from your recent plays, using the same idea as osu!lazer:
+Recommend a **universal Offset** for osu!stable from **live hit error**, not old replays.
 
-1. Rebuild hit error from local `.osr` replays (circles + slider heads).
-2. Take the **median** error of each play (need at least 50 timed hits, like lazer).
-3. Average those into one suggested global offset: `currentOffset - medianError`.
-4. Print it. Optionally write it to `osu!.<user>.cfg`.
+1. Attach to a running `osu!.exe` (Windows, or Wine on Linux / NixOS).
+2. Read the current play’s hit-error list from process memory (the same values as the in-game error bar).
+3. Take the **median** error (need at least 50 timed hits).
+4. Print the exact Offset to set: `currentOffset - medianError`.
+
+That uses the Offset, audio device, and Wine latency you have **right now**. Old `.osr` files can have been played with a different Offset.
 
 On Wine (including [nix-osu-stable](https://github.com/gaavin/nix-osu-stable)), audio is usually late, so the suggestion is often a **negative** Offset.
 
-Works on **Windows**, **macOS**, **Linux**, and **NixOS**.
+Memory reading works on **Windows** and **Linux/NixOS (Wine)**. macOS binaries can still be built; they cannot read osu! memory.
 
 ## Install
 
@@ -73,18 +75,24 @@ GOOS=windows GOARCH=amd64 go build -o osu-offset.exe ./cmd/osu-offset
 
 ## Run
 
+Start osu!stable first, then:
+
 ```bash
 osu-offset
-osu-offset -verbose
+osu-offset -watch          # print after every play
 osu-offset -json
-osu-offset -debug-paths    # show every install path that would be tried
+osu-offset -debug-paths    # show install-path candidates and exit
 osu-offset -apply          # write Offset into the osu! config (close the game first)
 osu-offset -dir /path/to/osu
 ```
 
+Play a map. When the play ends, it prints the Offset to set in **Options → Audio → Offset**.
+
+On Linux, the reader needs to inspect osu!’s Wine process (`process_vm_readv`). If attach fails, run as the same user as the game; you may need `kernel.yama.ptrace_scope=0` (or a cap that allows ptrace).
+
 ## Path detection
 
-First match wins:
+Used for the **current Offset** in `osu!.<user>.cfg` and for `-apply`. First match wins:
 
 1. `-dir` (folder with `osu!.exe`, the exe itself, or a nix-osu-stable **location** dir)
 2. `OSU_STABLE_DIR` / `OSU_DIR` / `OSUPATH`
@@ -112,24 +120,23 @@ In-game: **Options → Audio → Offset**.
 - Hitting **early** (error bar left) → **raise** Offset.
 - Hitting **late** (error bar right) → **lower** Offset.
 
-nix-osu-stable’s README ballpark is about **−40 to −35 ms** in normal mode; this tool replaces guessing with your own replays.
+nix-osu-stable’s README ballpark is about **−40 to −35 ms** in normal mode; this tool replaces guessing with your current session.
 
 ## Flags
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-dir` | auto | osu!stable folder (the one with `osu!.exe`) |
-| `-plays` | 50 | max recent plays (lazer’s history cap) |
-| `-min-hits` | 50 | min timed hits per play |
+| `-dir` | auto | osu!stable folder (config / `-apply`) |
+| `-min-hits` | 50 | min timed hits before recommending |
+| `-watch` | off | keep going after each play |
+| `-poll` | 50ms | memory sample interval |
 | `-apply` | off | write `Offset = …` into the user cfg |
 | `-json` | off | machine-readable output |
-| `-verbose` | off | print skipped plays |
 | `-debug-paths` | off | print path candidates and exit |
-| `-ur-dampen` | off | lazer’s *per-beatmap* UR shrink (not used for global offset) |
 
 ## Notes
 
-- Only **osu!standard**. Relax / autopilot / auto replays are ignored.
-- Replays are read from `Data/r/` and `Replays/`.
-- Hit reconstruction is a replay analyser, not the live client. Median over many notes is stable enough for offset; a few stacked or slider-head mismatches will not move the suggestion much.
+- Only **osu!standard** hit errors are used.
+- Replay watching is ignored (those hits are not yours with the current Offset).
+- Signatures match current osu!stable (same family as [tosu](https://github.com/tosuapp/tosu) / gosumemory). A game update can move them.
 - `-apply` while osu! is running is often undone when the client exits — close it first.

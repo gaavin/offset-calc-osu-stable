@@ -2,13 +2,13 @@
 <component type="desktop-application">
   <id>io.github.gaavin.osu-offset</id>
   <name>osu-offset</name>
-  <summary>Recommend a universal Offset for osu!stable from recent plays</summary>
+  <summary>Recommend a universal Offset for osu!stable from live hit error</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>LicenseRef-unspecified</project_license>
   <description>
     <p>
-      Rebuilds hit error from local osu!stable replays and suggests a global Offset,
-      using the same median-error idea as osu!lazer.
+      Reads hit error from a running osu!stable process and prints the global
+      Offset to set, using the median of the current play.
     </p>
   </description>
   <launchable type="desktop-id">io.github.gaavin.osu-offset.desktop</launchable>

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=osu-offset
-Comment=Recommend a universal Offset for osu!stable from recent plays
+Comment=Recommend a universal Offset for osu!stable from live hit error
 Exec=osu-offset
 Icon=io.github.gaavin.osu-offset
 Terminal=true
