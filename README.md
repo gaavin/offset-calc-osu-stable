@@ -24,6 +24,8 @@ osu-offset          # watch osu!.exe; print after every usable play
 2. Play a map with at least **50 timed hits** (standard mode).
 3. When the play ends, copy the printed Offset into **Options → Audio → Offset**.
 
+![osu-offset example output](assets/osu-offset-example.png)
+
 ---
 
 ## 🎯 How It Works
