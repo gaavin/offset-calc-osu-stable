@@ -123,7 +123,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            curl ca-certificates file git librsvg2-bin \
+            curl ca-certificates file git librsvg2-bin librsvg2-common \
+            appstream appstream-compose \
             flatpak flatpak-builder elfutils python3
       - name: Build AppImage
         env:
