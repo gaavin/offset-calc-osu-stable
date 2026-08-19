@@ -86,12 +86,9 @@ func Scan(p Process, pattern string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	try := func(onlyExec bool, preferOsu bool) (int64, bool) {
+	try := func(want func(Region) bool) (int64, bool) {
 		for _, reg := range maps {
-			if onlyExec && !reg.Exec {
-				continue
-			}
-			if preferOsu && !strings.Contains(strings.ToLower(reg.Name), "osu!") {
+			if !reg.Exec || !want(reg) {
 				continue
 			}
 			if addr, ok := scanRegion(p, reg, pat); ok {
@@ -100,13 +97,23 @@ func Scan(p Process, pattern string) (int64, error) {
 		}
 		return 0, false
 	}
-	if addr, ok := try(true, true); ok {
+	namedOsu := func(reg Region) bool {
+		return strings.Contains(strings.ToLower(reg.Name), "osu!")
+	}
+	anon := func(reg Region) bool {
+		n := strings.TrimSpace(reg.Name)
+		return n == "" || strings.HasPrefix(n, "[")
+	}
+	anyExec := func(Region) bool { return true }
+	// Code signatures live in executable pages. Scanning every readable Wine
+	// mapping can take minutes and looks like a hang.
+	if addr, ok := try(namedOsu); ok {
 		return addr, nil
 	}
-	if addr, ok := try(true, false); ok {
+	if addr, ok := try(anon); ok {
 		return addr, nil
 	}
-	if addr, ok := try(false, false); ok {
+	if addr, ok := try(anyExec); ok {
 		return addr, nil
 	}
 	return 0, fmt.Errorf("no memory matched the pattern: %s", pattern)

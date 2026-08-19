@@ -3,6 +3,7 @@ package osumem
 import (
 	"fmt"
 	"runtime"
+	"time"
 )
 
 const (
@@ -26,6 +27,7 @@ type Reader struct {
 	configPtr    int64
 	offsetIndex  int32
 	arrayStart   int64
+	configTried  time.Time
 }
 
 func Attach(p Process) (*Reader, error) {
@@ -38,15 +40,12 @@ func Attach(p Process) (*Reader, error) {
 		return nil, fmt.Errorf("rulesets signature: %w", err)
 	}
 	replay, _ := Scan(p, sigReplay)
-	configPtr, offsetIndex, err := resolveConfig(p)
-	if err != nil {
-		return nil, err
-	}
+	configPtr, offsetIndex, cfgErr := resolveConfig(p)
 	arrayStart := int64(0x8)
 	if runtime.GOOS != "windows" {
 		arrayStart = 0xC
 	}
-	return &Reader{
+	rd := &Reader{
 		proc:         p,
 		statusPtr:    statusPat - 0x4,
 		rulesetsAddr: rulesets,
@@ -54,7 +53,11 @@ func Attach(p Process) (*Reader, error) {
 		configPtr:    configPtr,
 		offsetIndex:  offsetIndex,
 		arrayStart:   arrayStart,
-	}, nil
+	}
+	if cfgErr != nil {
+		rd.configTried = time.Now()
+	}
+	return rd, nil
 }
 
 func (r *Reader) Close() error { return r.proc.Close() }
@@ -64,6 +67,18 @@ func (r *Reader) Pid() int { return r.proc.Pid() }
 func (r *Reader) Alive() bool { return r.proc.Alive() }
 
 func (r *Reader) Offset() (int32, error) {
+	if r.configPtr == 0 || r.offsetIndex < 0 {
+		if !r.configTried.IsZero() && time.Since(r.configTried) < 2*time.Second {
+			return 0, fmt.Errorf("configuration not ready")
+		}
+		r.configTried = time.Now()
+		ptr, idx, err := resolveConfig(r.proc)
+		if err != nil {
+			return 0, err
+		}
+		r.configPtr = ptr
+		r.offsetIndex = idx
+	}
 	return readConfigInt(r.proc, r.configPtr, r.offsetIndex)
 }
 

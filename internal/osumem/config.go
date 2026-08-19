@@ -23,7 +23,9 @@ func readSharpString(r Process, addr int64) (string, error) {
 	if addr == 0 {
 		return "", nil
 	}
-	length, err := ReadI32(r, addr+0x8)
+	// osu!stable is 32-bit .NET: MethodTable at 0, length at +4, UTF-16 at +8.
+	const lenOff int64 = 4
+	length, err := ReadI32(r, addr+lenOff)
 	if err != nil {
 		return "", err
 	}
@@ -34,7 +36,7 @@ func readSharpString(r Process, addr int64) (string, error) {
 		return "", fmt.Errorf("string length %d", length)
 	}
 	raw := make([]byte, length*2)
-	if _, err := r.ReadAt(raw, addr+0xc); err != nil {
+	if _, err := r.ReadAt(raw, addr+lenOff+4); err != nil {
 		return "", err
 	}
 	u16 := make([]uint16, length)

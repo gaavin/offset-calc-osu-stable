@@ -185,13 +185,14 @@ func sampleSession(o sessionOpts) error {
 				best = append([]int32(nil), errs...)
 			}
 			if !o.jsonOut && len(best) > 0 {
+				med := hits.Median(hits.Int32ToFloat(best))
 				cur, err := o.rd.Offset()
 				if err != nil {
-					return fmt.Errorf("read offset: %w", err)
+					fmt.Fprintf(os.Stderr, "\r  %d hits  median %+.1f ms  (offset not readable yet)     ", len(best), med)
+				} else {
+					rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
+					fmt.Fprintf(os.Stderr, "\r  %d hits  offset %d ms  median %+.1f ms  → Offset %d     ", len(best), cur, med, rec)
 				}
-				med := hits.Median(hits.Int32ToFloat(best))
-				rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
-				fmt.Fprintf(os.Stderr, "\r  %d hits  offset %d ms  median %+.1f ms  → Offset %d     ", len(best), cur, med, rec)
 			}
 			continue
 		}
