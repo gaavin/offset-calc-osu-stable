@@ -195,6 +195,7 @@ jobs:
       - name: Attach Linux packages
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
@@ -205,4 +206,4 @@ jobs:
             exit 0
           fi
           ls -la "${files[@]}"
-          gh release upload "$TAG" "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$GH_REPO"
