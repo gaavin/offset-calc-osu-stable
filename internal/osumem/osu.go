@@ -23,6 +23,8 @@ type Reader struct {
 	statusPtr    int64
 	rulesetsAddr int64
 	replayAddr   int64
+	configPtr    int64
+	offsetIndex  int32
 	arrayStart   int64
 }
 
@@ -36,6 +38,10 @@ func Attach(p Process) (*Reader, error) {
 		return nil, fmt.Errorf("rulesets signature: %w", err)
 	}
 	replay, _ := Scan(p, sigReplay)
+	configPtr, offsetIndex, err := resolveConfig(p)
+	if err != nil {
+		return nil, err
+	}
 	arrayStart := int64(0x8)
 	if runtime.GOOS != "windows" {
 		arrayStart = 0xC
@@ -45,6 +51,8 @@ func Attach(p Process) (*Reader, error) {
 		statusPtr:    statusPat - 0x4,
 		rulesetsAddr: rulesets,
 		replayAddr:   replay,
+		configPtr:    configPtr,
+		offsetIndex:  offsetIndex,
 		arrayStart:   arrayStart,
 	}, nil
 }
@@ -54,6 +62,10 @@ func (r *Reader) Close() error { return r.proc.Close() }
 func (r *Reader) Pid() int { return r.proc.Pid() }
 
 func (r *Reader) Alive() bool { return r.proc.Alive() }
+
+func (r *Reader) Offset() (int32, error) {
+	return readConfigInt(r.proc, r.configPtr, r.offsetIndex)
+}
 
 func (r *Reader) Status() (int32, error) {
 	return DerefI32(r.proc, r.statusPtr)

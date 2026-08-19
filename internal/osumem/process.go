@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
@@ -69,6 +70,18 @@ func ReadI8(r io.ReaderAt, addr int64) (byte, error) {
 		return 0, err
 	}
 	return b[0], nil
+}
+
+func ReadF64(r io.ReaderAt, addr int64) (float64, error) {
+	var b [8]byte
+	n, err := r.ReadAt(b[:], addr)
+	if n < 8 {
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
+		return 0, err
+	}
+	return math.Float64frombits(binary.LittleEndian.Uint64(b[:])), nil
 }
 
 func DerefI32(r io.ReaderAt, addr int64) (int32, error) {

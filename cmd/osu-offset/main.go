@@ -13,7 +13,6 @@ import (
 
 	"github.com/gaavin/offset-calc-osu-stable/internal/hits"
 	"github.com/gaavin/offset-calc-osu-stable/internal/osumem"
-	"github.com/gaavin/offset-calc-osu-stable/internal/stable"
 )
 
 var version = "dev"
@@ -26,21 +25,17 @@ func main() {
 }
 
 func run() error {
-	dir := flag.String("dir", "", "osu!stable directory (for current Offset / -apply)")
-	apply := flag.Bool("apply", false, "write the recommended Offset into the osu! config")
 	jsonOut := flag.Bool("json", false, "print JSON instead of text")
 	minHits := flag.Int("min-hits", 50, "minimum timed hits before recommending")
 	once := flag.Bool("once", false, "exit after the first usable play instead of keeping watch")
 	watch := flag.Bool("watch", true, "keep sampling osu! processes (default; use -once to exit)")
 	poll := flag.Duration("poll", 50*time.Millisecond, "how often to read osu! memory")
-	debugPaths := flag.Bool("debug-paths", false, "print install-path candidates and exit")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `osu-offset %s — recommend a universal Offset from live osu!stable hit error
 
 Watches running osu!.exe processes (Windows, or Wine on Linux / NixOS) and
-reads the current play's hit-error list from memory (the same values as the
-in-game error bar). That uses the Offset and audio setup you have right now,
-unlike old .osr replays.
+reads the current play's hit-error list and universal Offset from memory.
+That uses the audio setup you have right now, unlike old .osr replays.
 
 Leave it running. Play maps. Each finished play with enough hits prints the
 Offset to set in Options → Audio → Offset.
@@ -51,25 +46,11 @@ Offset to set in Options → Audio → Offset.
 	flag.Parse()
 	keepWatching := *watch && !*once
 
-	if *debugPaths {
-		return stable.PrintDebug(os.Stdout)
-	}
-
-	inst, instErr := stable.Detect(*dir)
-	if instErr != nil && *apply {
-		return instErr
-	}
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	if !*jsonOut {
 		fmt.Fprintf(os.Stderr, "osu-offset %s — watching for osu!.exe (live hit error, not replays)\n", version)
-		if inst != nil {
-			fmt.Fprintf(os.Stderr, "Current Offset: %d ms (%s)\n", inst.Offset, inst.Cfg)
-		} else {
-			fmt.Fprintf(os.Stderr, "Could not find osu! config (%v); Offset assumed 0.\n", instErr)
-		}
 		fmt.Fprintf(os.Stderr, "Need ≥ %d timed hits on a standard play. Ctrl+C to stop.\n", *minHits)
 	}
 
@@ -111,13 +92,11 @@ Offset to set in Options → Audio → Offset.
 
 		err = sampleSession(sessionOpts{
 			rd:           rd,
-			inst:         inst,
 			stop:         stop,
 			minHits:      *minHits,
 			poll:         *poll,
 			jsonOut:      *jsonOut,
 			keepWatching: keepWatching,
-			apply:        *apply && !keepWatching,
 		})
 		proc.Close()
 		if errors.Is(err, osumem.ErrGone) {
@@ -144,13 +123,11 @@ func waitOrStop(stop <-chan os.Signal, d time.Duration) error {
 
 type sessionOpts struct {
 	rd           *osumem.Reader
-	inst         *stable.Install
 	stop         <-chan os.Signal
 	minHits      int
 	poll         time.Duration
 	jsonOut      bool
 	keepWatching bool
-	apply        bool
 }
 
 func sampleSession(o sessionOpts) error {
@@ -166,7 +143,7 @@ func sampleSession(o sessionOpts) error {
 		select {
 		case <-o.stop:
 			if len(best) >= o.minHits {
-				return finish(o.inst, best, o.apply, o.jsonOut)
+				return finish(o.rd, best, o.jsonOut)
 			}
 			if len(best) == 0 {
 				return fmt.Errorf("interrupted before any hits")
@@ -208,13 +185,13 @@ func sampleSession(o sessionOpts) error {
 				best = append([]int32(nil), errs...)
 			}
 			if !o.jsonOut && len(best) > 0 {
-				cur := 0
-				if o.inst != nil {
-					cur = o.inst.Offset
+				cur, err := o.rd.Offset()
+				if err != nil {
+					return fmt.Errorf("read offset: %w", err)
 				}
 				med := hits.Median(hits.Int32ToFloat(best))
 				rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
-				fmt.Fprintf(os.Stderr, "\r  %d hits  median %+.1f ms  → Offset %d     ", len(best), med, rec)
+				fmt.Fprintf(os.Stderr, "\r  %d hits  offset %d ms  median %+.1f ms  → Offset %d     ", len(best), cur, med, rec)
 			}
 			continue
 		}
@@ -232,7 +209,7 @@ func sampleSession(o sessionOpts) error {
 				continue
 			}
 			if o.keepWatching {
-				if err := finish(o.inst, best, false, o.jsonOut); err != nil {
+				if err := finish(o.rd, best, o.jsonOut); err != nil {
 					return err
 				}
 				best = nil
@@ -241,22 +218,22 @@ func sampleSession(o sessionOpts) error {
 				}
 				continue
 			}
-			return finish(o.inst, best, o.apply, o.jsonOut)
+			return finish(o.rd, best, o.jsonOut)
 		}
 	}
 }
 
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
-func finish(inst *stable.Install, raw []int32, apply, jsonOut bool) error {
+func finish(rd *osumem.Reader, raw []int32, jsonOut bool) error {
+	cur, err := rd.Offset()
+	if err != nil {
+		return fmt.Errorf("read offset: %w", err)
+	}
 	errors := hits.Int32ToFloat(raw)
 	med := hits.Median(errors)
 	mean := hits.Mean(errors)
 	ur := hits.UnstableRate(errors)
-	cur := 0
-	if inst != nil {
-		cur = inst.Offset
-	}
 	rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
 
 	if jsonOut {
@@ -267,10 +244,6 @@ func finish(inst *stable.Install, raw []int32, apply, jsonOut bool) error {
 			"unstable_rate":      round1(ur),
 			"current_offset":     cur,
 			"recommended_offset": rec,
-		}
-		if inst != nil {
-			out["osu_dir"] = inst.Root
-			out["config"] = inst.Cfg
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -283,7 +256,7 @@ func finish(inst *stable.Install, raw []int32, apply, jsonOut bool) error {
 	fmt.Printf("Unstable rate:      %.1f\n", ur)
 	fmt.Printf("Current Offset:     %d ms\n", cur)
 	fmt.Printf("Recommended Offset: %d ms\n", rec)
-	delta := rec - cur
+	delta := rec - int(cur)
 	switch {
 	case delta == 0:
 		fmt.Println("That matches your current Offset — leave it.")
@@ -292,16 +265,6 @@ func finish(inst *stable.Install, raw []int32, apply, jsonOut bool) error {
 	default:
 		fmt.Printf("Hits are ~%.1f ms late. Lower Offset by %d ms.\n", round1(med), -delta)
 	}
-	fmt.Println("Set it in Options → Audio → Offset. Close osu! before -apply, or the client may overwrite the file.")
-
-	if apply {
-		if inst == nil {
-			return fmt.Errorf("cannot -apply: osu! config not found")
-		}
-		if err := inst.WriteOffset(rec); err != nil {
-			return fmt.Errorf("write config: %w", err)
-		}
-		fmt.Printf("Wrote Offset = %d to %s\n", rec, inst.Cfg)
-	}
+	fmt.Println("Set it in Options → Audio → Offset.")
 	return nil
 }
