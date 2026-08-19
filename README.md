@@ -40,7 +40,28 @@ GOOS=darwin  GOARCH=arm64 go build -o osu-offset ./cmd/osu-offset
 
 ### Release binaries
 
-GitHub Actions builds `linux`, `darwin`, and `windows` (`amd64` + `arm64`) on each `v*` tag. Download `osu-offset-<os>-<arch>` (`.exe` on Windows).
+Every push to `master` publishes a GitHub Release tagged `vYYYY-MM-DD-HHMMSS` (UTC commit time). Tags and assets are never overwritten.
+
+Download from the [latest release](https://github.com/gaavin/offset-calc-osu-stable/releases):
+
+| Platform | Artifact |
+| --- | --- |
+| Windows | `osu-offset-windows-amd64.exe`, `osu-offset-windows-arm64.exe` |
+| macOS | `osu-offset-darwin-amd64`, `osu-offset-darwin-arm64` |
+| Linux | `osu-offset-x86_64.AppImage`, `osu-offset-aarch64.AppImage` |
+| Linux (Flatpak) | `osu-offset-x86_64.flatpak`, `osu-offset-aarch64.flatpak` |
+
+```bash
+# AppImage
+chmod +x osu-offset-x86_64.AppImage
+./osu-offset-x86_64.AppImage
+
+# Flatpak (sideload; not on Flathub)
+flatpak install --user ./osu-offset-x86_64.flatpak
+flatpak run io.github.gaavin.osu-offset
+```
+
+Plain `osu-offset-<os>-<arch>` binaries (`amd64` + `arm64`) are attached as well. Nix stays `nix run .` / Home Manager above.
 
 From source:
 
