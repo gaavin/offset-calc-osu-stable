@@ -26,6 +26,7 @@ type PlayStats struct {
 	Recommend int
 	MinHits   int
 	HasOffset bool
+	MapTitle  string
 }
 
 type Result struct {
@@ -36,6 +37,7 @@ type Result struct {
 	CurrentOffset int
 	Recommend     int
 	Errors        []float64
+	MapTitle      string
 }
 
 func Enabled(jsonOut bool) bool {
@@ -81,9 +83,17 @@ func (d *Display) Attached(pid int) {
 	pterm.Success.Printfln("Attached to osu!.exe (pid %d)", pid)
 }
 
-func (d *Display) PlayStarted() {
+func (d *Display) PlayStarted(mapTitle string) {
 	if !d.fancy {
-		fmt.Fprintln(d.stderr, "play started")
+		if mapTitle != "" {
+			fmt.Fprintf(d.stderr, "play started: %s\n", mapTitle)
+		} else {
+			fmt.Fprintln(d.stderr, "play started")
+		}
+		return
+	}
+	if mapTitle != "" {
+		pterm.Info.Printfln("Playing: %s", mapTitle)
 	}
 }
 
@@ -103,13 +113,21 @@ func (d *Display) UpdatePlay(s PlayStats) {
 	d.live.Update(renderLive(s))
 }
 
-func (d *Display) PlayEndedShort(hitCount, minHits int) {
+func (d *Display) PlayEndedShort(hitCount, minHits int, mapTitle string) {
 	if !d.fancy {
 		fmt.Fprintln(d.stderr)
-		fmt.Fprintf(d.stderr, "play ended with %d hits (need %d); waiting for another map\n", hitCount, minHits)
+		if mapTitle != "" {
+			fmt.Fprintf(d.stderr, "play ended (%s) with %d hits (need %d); waiting for another map\n", mapTitle, hitCount, minHits)
+		} else {
+			fmt.Fprintf(d.stderr, "play ended with %d hits (need %d); waiting for another map\n", hitCount, minHits)
+		}
 		return
 	}
 	d.live.Clear()
+	if mapTitle != "" {
+		pterm.Warning.Printfln("Play ended (%s) with %d hits (need %d); waiting for another map", mapTitle, hitCount, minHits)
+		return
+	}
 	pterm.Warning.Printfln("Play ended with %d hits (need %d); waiting for another map", hitCount, minHits)
 }
 
@@ -157,6 +175,9 @@ func (d *Display) printPlainPlay(s PlayStats) {
 }
 
 func (d *Display) printPlainResult(r Result) {
+	if r.MapTitle != "" {
+		fmt.Printf("Map:                %s\n", r.MapTitle)
+	}
 	fmt.Printf("Hits:               %d\n", r.Hits)
 	fmt.Printf("Median hit error:   %+.1f ms\n", r.Median)
 	fmt.Printf("Mean hit error:     %+.1f ms\n", r.Mean)
@@ -187,6 +208,9 @@ func (d *Display) printFancyResult(r Result) {
 		fmt.Fprintln(d.stdout, fmt.Sprintf("Recommended Offset: %d ms", r.Recommend))
 	} else {
 		fmt.Fprintln(d.stdout)
+		if r.MapTitle != "" {
+			fmt.Fprintln(d.stdout, pterm.NewStyle(pterm.Bold, pterm.FgLightWhite).Sprint(r.MapTitle))
+		}
 		fmt.Fprintln(d.stdout, big)
 	}
 	fmt.Fprintln(d.stdout, panels)
@@ -253,14 +277,12 @@ func renderLive(s PlayStats) string {
 
 	cal := renderCalibrationPreview(s.CurOffset, s.Median, s.Recommend, s.HasOffset, 44)
 
-	return strings.Join([]string{
-		headline,
-		progress,
-		"",
-		hist.String(),
-		"",
-		cal,
-	}, "\n")
+	lines := []string{headline}
+	if s.MapTitle != "" {
+		lines = append(lines, pterm.NewStyle(pterm.FgLightWhite).Sprint(s.MapTitle))
+	}
+	lines = append(lines, progress, "", hist.String(), "", cal)
+	return strings.Join(lines, "\n")
 }
 
 func renderFinishChart(r Result) string {
@@ -297,7 +319,11 @@ func renderSummary(r Result) string {
 		action = fmt.Sprintf("Hits are ~%.1f ms late. Lower Offset by %d ms.", round1(r.Median), -delta)
 	}
 
-	lines := []string{
+	lines := []string{}
+	if r.MapTitle != "" {
+		lines = append(lines, fmt.Sprintf("Map:            %s", r.MapTitle))
+	}
+	lines = append(lines,
 		fmt.Sprintf("Hits:           %d", r.Hits),
 		fmt.Sprintf("Median error:   %+.1f ms", r.Median),
 		fmt.Sprintf("Mean error:     %+.1f ms", r.Mean),
@@ -306,7 +332,7 @@ func renderSummary(r Result) string {
 		fmt.Sprintf("Recommend:      %d ms", r.Recommend),
 		"",
 		action,
-	}
+	)
 	return strings.Join(lines, "\n")
 }
 

@@ -137,15 +137,16 @@ func sampleSession(o sessionOpts) error {
 	defer tick.Stop()
 
 	var (
-		inPlay bool
-		best   []int32
+		inPlay   bool
+		best     []int32
+		mapTitle string
 	)
 
 	for {
 		select {
 		case <-o.stop:
 			if len(best) >= o.minHits {
-				return finish(o.rd, best, o.jsonOut, o.ui)
+				return finish(o.rd, best, mapTitle, o.jsonOut, o.ui)
 			}
 			if len(best) == 0 {
 				return fmt.Errorf("interrupted before any hits")
@@ -171,9 +172,13 @@ func sampleSession(o sessionOpts) error {
 			if !inPlay {
 				inPlay = true
 				best = nil
+				mapTitle = readMapTitle(o.rd)
 				if !o.jsonOut {
-					o.ui.PlayStarted()
+					o.ui.PlayStarted(mapTitle)
 				}
+			}
+			if mapTitle == "" {
+				mapTitle = readMapTitle(o.rd)
 			}
 			if mode, err := o.rd.Mode(); err == nil && mode != 0 {
 				if !o.jsonOut {
@@ -194,6 +199,7 @@ func sampleSession(o sessionOpts) error {
 					Errors:   hits.Int32ToFloat(best),
 					Median:   med,
 					MinHits:  o.minHits,
+					MapTitle: mapTitle,
 				}
 				if err != nil {
 					o.ui.UpdatePlay(ps)
@@ -209,34 +215,42 @@ func sampleSession(o sessionOpts) error {
 
 		if inPlay {
 			inPlay = false
+			if mapTitle == "" {
+				mapTitle = readMapTitle(o.rd)
+			}
 			if len(best) < o.minHits {
 				if !o.jsonOut {
-					o.ui.PlayEndedShort(len(best), o.minHits)
+					o.ui.PlayEndedShort(len(best), o.minHits, mapTitle)
 				}
 				best = nil
+				mapTitle = ""
 				continue
 			}
 			if o.keepWatching {
-				if err := finish(o.rd, best, o.jsonOut, o.ui); err != nil {
+				if err := finish(o.rd, best, mapTitle, o.jsonOut, o.ui); err != nil {
 					return err
 				}
 				best = nil
+				mapTitle = ""
 				if !o.jsonOut {
 					o.ui.WatchingAnother()
 				}
 				continue
 			}
-			return finish(o.rd, best, o.jsonOut, o.ui)
+			return finish(o.rd, best, mapTitle, o.jsonOut, o.ui)
 		}
 	}
 }
 
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
-func finish(rd *osumem.Reader, raw []int32, jsonOut bool, ui *tui.Display) error {
+func finish(rd *osumem.Reader, raw []int32, mapTitle string, jsonOut bool, ui *tui.Display) error {
 	cur, err := rd.Offset()
 	if err != nil {
 		return fmt.Errorf("read offset: %w", err)
+	}
+	if mapTitle == "" {
+		mapTitle = readMapTitle(rd)
 	}
 	errors := hits.Int32ToFloat(raw)
 	med := hits.Median(errors)
@@ -252,6 +266,9 @@ func finish(rd *osumem.Reader, raw []int32, jsonOut bool, ui *tui.Display) error
 			"unstable_rate":      round1(ur),
 			"current_offset":     cur,
 			"recommended_offset": rec,
+		}
+		if mapTitle != "" {
+			out["map"] = mapTitle
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -269,6 +286,15 @@ func finish(rd *osumem.Reader, raw []int32, jsonOut bool, ui *tui.Display) error
 		CurrentOffset: int(cur),
 		Recommend:     rec,
 		Errors:        errors,
+		MapTitle:      mapTitle,
 	})
 	return nil
+}
+
+func readMapTitle(rd *osumem.Reader) string {
+	b, err := rd.Beatmap()
+	if err != nil {
+		return ""
+	}
+	return b.Display()
 }

@@ -15,6 +15,7 @@ const (
 	sigStatus   = "48 83 F8 04 73 1E"
 	sigRulesets = "7D 15 A1 ?? ?? ?? ?? 85 C0"
 	sigReplay   = "55 8B EC 80 3D ?? ?? ?? ?? 00 75 26 80 3D"
+	sigBase     = "F8 01 74 04 83 65"
 )
 
 // Reader attaches to a running osu!stable process and reads the current
@@ -24,6 +25,7 @@ type Reader struct {
 	statusPtr    int64
 	rulesetsAddr int64
 	replayAddr   int64
+	baseAddr     int64
 	configPtr    int64
 	offsetIndex  int32
 	arrayStart   int64
@@ -40,6 +42,7 @@ func Attach(p Process) (*Reader, error) {
 		return nil, fmt.Errorf("rulesets signature: %w", err)
 	}
 	replay, _ := Scan(p, sigReplay)
+	base, _ := Scan(p, sigBase)
 	configPtr, offsetIndex, cfgErr := resolveConfig(p)
 	arrayStart := int64(0x8)
 	if runtime.GOOS != "windows" {
@@ -50,6 +53,7 @@ func Attach(p Process) (*Reader, error) {
 		statusPtr:    statusPat - 0x4,
 		rulesetsAddr: rulesets,
 		replayAddr:   replay,
+		baseAddr:     base,
 		configPtr:    configPtr,
 		offsetIndex:  offsetIndex,
 		arrayStart:   arrayStart,
