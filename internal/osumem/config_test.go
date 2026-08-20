@@ -7,32 +7,41 @@ import (
 )
 
 type memProc struct {
-	mem map[int64][]byte
+	mem  map[int64][]byte
+	maps []Region
 }
 
 func (p memProc) Pid() int     { return 1 }
 func (p memProc) Alive() bool  { return true }
 func (p memProc) Close() error { return nil }
 func (p memProc) Maps() ([]Region, error) {
+	if p.maps != nil {
+		return p.maps, nil
+	}
 	return nil, nil
 }
 
 func (p memProc) ReadAt(b []byte, off int64) (int, error) {
-	chunk, ok := p.mem[off]
-	if !ok {
-		for start, data := range p.mem {
-			if off >= start && off+int64(len(b)) <= start+int64(len(data)) {
-				copy(b, data[off-start:])
-				return len(b), nil
-			}
+	if len(b) == 0 {
+		return 0, nil
+	}
+	if chunk, ok := p.mem[off]; ok {
+		n := copy(b, chunk)
+		if n < len(b) {
+			return n, io.ErrUnexpectedEOF
 		}
-		return 0, io.ErrUnexpectedEOF
+		return n, nil
 	}
-	n := copy(b, chunk)
-	if n < len(b) {
-		return n, io.ErrUnexpectedEOF
+	for start, data := range p.mem {
+		if off >= start && off < start+int64(len(data)) {
+			n := copy(b, data[off-start:])
+			if n < len(b) {
+				return n, io.ErrUnexpectedEOF
+			}
+			return n, nil
+		}
 	}
-	return n, nil
+	return 0, io.ErrUnexpectedEOF
 }
 
 func putI32(p memProc, addr int64, v int32) {

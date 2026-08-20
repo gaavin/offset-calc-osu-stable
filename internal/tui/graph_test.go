@@ -36,3 +36,12 @@ func TestMedianColumnOutOfRange(t *testing.T) {
 		t.Fatalf("got %d", got)
 	}
 }
+
+func TestHistogramSpanUsesWidth(t *testing.T) {
+	if got := histogramSpan(nil, 44); got != 25 {
+		t.Fatalf("width 44 span=%v", got)
+	}
+	if got := histogramSpan([]float64{90}, 44); got != 95 {
+		t.Fatalf("data span=%v", got)
+	}
+}

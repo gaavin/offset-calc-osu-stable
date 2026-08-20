@@ -54,6 +54,10 @@ func RoundOffset(v float64) int {
 	return int(math.Round(v))
 }
 
+func Round1(v float64) float64 {
+	return math.Round(v*10) / 10
+}
+
 func Int32ToFloat(in []int32) []float64 {
 	out := make([]float64, len(in))
 	for i, v := range in {

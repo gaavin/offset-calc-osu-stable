@@ -95,7 +95,7 @@ func DerefI32(r io.ReaderAt, addr int64) (int32, error) {
 func OpenOsu() (Process, error) {
 	p, err := findOsuProcess()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNotRunning, err)
+		return nil, fmt.Errorf("%w: %w", ErrNotRunning, err)
 	}
 	return p, nil
 }

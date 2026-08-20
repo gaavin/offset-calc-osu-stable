@@ -77,25 +77,53 @@ func findIn(buf []byte, p Pattern) int {
 	}
 }
 
+func findAllIn(buf []byte, p Pattern) []int {
+	var out []int
+	from := 0
+	for {
+		rel := findIn(buf[from:], p)
+		if rel < 0 {
+			return out
+		}
+		at := from + rel
+		out = append(out, at)
+		from = at + 1
+	}
+}
+
 func Scan(p Process, pattern string) (int64, error) {
-	pat, err := ParsePattern(pattern)
+	addrs, err := scanMatches(p, pattern, 1)
 	if err != nil {
 		return 0, err
+	}
+	return addrs[0], nil
+}
+
+func ScanAll(p Process, pattern string, limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	return scanMatches(p, pattern, limit)
+}
+
+func scanMatches(p Process, pattern string, limit int) ([]int64, error) {
+	pat, err := ParsePattern(pattern)
+	if err != nil {
+		return nil, err
 	}
 	maps, err := p.Maps()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	try := func(want func(Region) bool) (int64, bool) {
+	try := func(want func(Region) bool) []int64 {
+		var out []int64
 		for _, reg := range maps {
-			if !reg.Exec || !want(reg) {
+			if len(out) >= limit || !reg.Exec || !want(reg) {
 				continue
 			}
-			if addr, ok := scanRegion(p, reg, pat); ok {
-				return addr, true
-			}
+			out = scanRegionAll(p, reg, pat, out, limit)
 		}
-		return 0, false
+		return out
 	}
 	namedOsu := func(reg Region) bool {
 		return strings.Contains(strings.ToLower(reg.Name), "osu!")
@@ -106,41 +134,51 @@ func Scan(p Process, pattern string) (int64, error) {
 	}
 	anyExec := func(Region) bool { return true }
 	// Code signatures live in executable pages. Scanning every readable Wine
-	// mapping can take minutes and looks like a hang.
-	if addr, ok := try(namedOsu); ok {
-		return addr, nil
+	// mapping can take minutes and looks like a hang. Prefer osu!-named
+	// modules; only fall through if that class has no hits.
+	if out := try(namedOsu); len(out) > 0 {
+		return out, nil
 	}
-	if addr, ok := try(anon); ok {
-		return addr, nil
+	if out := try(anon); len(out) > 0 {
+		return out, nil
 	}
-	if addr, ok := try(anyExec); ok {
-		return addr, nil
+	if out := try(anyExec); len(out) > 0 {
+		return out, nil
 	}
-	return 0, fmt.Errorf("no memory matched the pattern: %s", pattern)
+	return nil, fmt.Errorf("no memory matched the pattern: %s", pattern)
 }
 
-func scanRegion(p Process, reg Region, pat Pattern) (int64, bool) {
+func scanRegionAll(p Process, reg Region, pat Pattern, dst []int64, limit int) []int64 {
 	const chunk = 64 * 1024
 	overlap := len(pat.raw) - 1
 	if overlap < 0 {
 		overlap = 0
 	}
 	buf := make([]byte, chunk)
-	for off := int64(0); off < reg.Size; {
+	var last int64 = -1
+	for off := int64(0); off < reg.Size && len(dst) < limit; {
 		nwant := int64(chunk)
 		if off+nwant > reg.Size {
 			nwant = reg.Size - off
 		}
-		n, err := p.ReadAt(buf[:nwant], reg.Start+off)
-		if err != nil || n < len(pat.raw) {
+		if nwant <= 0 {
+			break
+		}
+		n, _ := p.ReadAt(buf[:nwant], reg.Start+off)
+		if n < len(pat.raw) {
 			off += nwant
-			if nwant == 0 {
-				break
-			}
 			continue
 		}
-		if at := findIn(buf[:n], pat); at >= 0 {
-			return reg.Start + off + int64(at), true
+		for _, at := range findAllIn(buf[:n], pat) {
+			addr := reg.Start + off + int64(at)
+			if addr <= last {
+				continue
+			}
+			dst = append(dst, addr)
+			last = addr
+			if len(dst) >= limit {
+				return dst
+			}
 		}
 		step := int64(n - overlap)
 		if step < 1 {
@@ -148,5 +186,5 @@ func scanRegion(p Process, reg Region, pat Pattern) (int64, bool) {
 		}
 		off += step
 	}
-	return 0, false
+	return dst
 }

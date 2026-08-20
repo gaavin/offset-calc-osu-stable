@@ -150,3 +150,18 @@ func TestOffsetReloadsIndexWhenSlotMoves(t *testing.T) {
 		t.Fatalf("index %d", rd.offsetIndex)
 	}
 }
+
+func TestFinishOffsetFallsBackToLast(t *testing.T) {
+	rd := &Reader{
+		proc:          memProc{mem: map[int64][]byte{}},
+		lastOffset:    -30,
+		hasLastOffset: true,
+	}
+	cur, err := rd.FinishOffset()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur != -30 {
+		t.Fatalf("offset %d", cur)
+	}
+}

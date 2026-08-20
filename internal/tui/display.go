@@ -270,7 +270,7 @@ func renderLive(s PlayStats) string {
 			title, s.HitCount, s.CurOffset, s.Median, s.Recommend)
 	}
 
-	span := histogramSpan(s.Errors)
+	span := histogramSpan(s.Errors, 44)
 	histRows := histogram(s.Errors, s.Median, 44, 5)
 	var hist strings.Builder
 	hist.WriteString(pterm.NewStyle(pterm.FgLightWhite, pterm.Bold).Sprint("Hit timing"))
@@ -296,7 +296,7 @@ func renderLive(s PlayStats) string {
 }
 
 func renderFinishChart(r Result) string {
-	span := histogramSpan(r.Errors)
+	span := histogramSpan(r.Errors, 48)
 	histRows := histogram(r.Errors, r.Median, 48, 6)
 
 	var b strings.Builder
@@ -406,19 +406,6 @@ func placeLabel(line []rune, mark int, label string) {
 	for i, ch := range label {
 		line[start+i] = ch
 	}
-}
-
-func histogramSpan(errors []float64) float64 {
-	half := 22.0
-	span := half
-	for _, e := range errors {
-		span = math.Max(span, math.Abs(e)+2)
-	}
-	span = math.Ceil(span/5) * 5
-	if span < 10 {
-		span = 10
-	}
-	return span
 }
 
 func round1(v float64) float64 {

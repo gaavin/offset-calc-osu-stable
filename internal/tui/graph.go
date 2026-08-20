@@ -10,6 +10,22 @@ const blocks = "▁▂▃▄▅▆▇█"
 
 var blockRunes = []rune(blocks)
 
+func histogramSpan(errors []float64, width int) float64 {
+	if width < 8 {
+		width = 8
+	}
+	half := float64(width) / 2
+	span := half
+	for _, e := range errors {
+		span = math.Max(span, math.Abs(e)+2)
+	}
+	span = math.Ceil(span/5) * 5
+	if span < 10 {
+		span = 10
+	}
+	return span
+}
+
 func histogram(errors []float64, median float64, width, height int) []string {
 	if width < 8 {
 		width = 8
@@ -21,15 +37,8 @@ func histogram(errors []float64, median float64, width, height int) []string {
 		return []string{strings.Repeat(" ", width)}
 	}
 
+	span := histogramSpan(errors, width)
 	half := float64(width) / 2
-	span := half
-	for _, e := range errors {
-		span = math.Max(span, math.Abs(e)+2)
-	}
-	span = math.Ceil(span/5) * 5
-	if span < 10 {
-		span = 10
-	}
 
 	bins := make([]int, width)
 	for _, e := range errors {

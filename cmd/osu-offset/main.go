@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +17,18 @@ import (
 )
 
 var version = "dev"
+
+var errInterrupted = errors.New("interrupted before any hits")
+
+type jsonResult struct {
+	Hits              int     `json:"hits"`
+	MedianMs          float64 `json:"median_ms"`
+	MeanMs            float64 `json:"mean_ms"`
+	UnstableRate      float64 `json:"unstable_rate"`
+	CurrentOffset     int32   `json:"current_offset"`
+	RecommendedOffset int     `json:"recommended_offset"`
+	Map               string  `json:"map,omitempty"`
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -47,19 +59,21 @@ Offset to set in Options → Audio → Offset.
 	keepWatching := *watch && !*once
 	ui := tui.New(tui.Enabled(*jsonOut), os.Stdout, os.Stderr)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if !*jsonOut {
 		ui.Banner(version, *minHits)
 	}
 
+	produced := false
 	waitingLogged := false
 	for {
-		select {
-		case <-stop:
-			return fmt.Errorf("interrupted before any hits")
-		default:
+		if ctx.Err() != nil {
+			if produced {
+				return nil
+			}
+			return errInterrupted
 		}
 
 		proc, err := osumem.OpenOsu()
@@ -68,20 +82,26 @@ Offset to set in Options → Audio → Offset.
 				ui.Waiting("waiting for osu!.exe …")
 				waitingLogged = true
 			}
-			if err := waitOrStop(stop, time.Second); err != nil {
-				return fmt.Errorf("interrupted before any hits")
+			if err := waitOrStop(ctx, time.Second); err != nil {
+				if produced {
+					return nil
+				}
+				return errInterrupted
 			}
 			continue
 		}
 		rd, err := osumem.Attach(proc)
 		if err != nil {
-			proc.Close()
+			_ = proc.Close()
 			if !waitingLogged && !*jsonOut {
 				ui.Waiting("osu!.exe found; waiting until memory signatures are readable …")
 				waitingLogged = true
 			}
-			if err := waitOrStop(stop, time.Second); err != nil {
-				return fmt.Errorf("interrupted before any hits")
+			if err := waitOrStop(ctx, time.Second); err != nil {
+				if produced {
+					return nil
+				}
+				return errInterrupted
 			}
 			continue
 		}
@@ -90,16 +110,17 @@ Offset to set in Options → Audio → Offset.
 			ui.Attached(rd.Pid())
 		}
 
-		err = sampleSession(sessionOpts{
+		had, err := sampleSession(sessionOpts{
+			ctx:          ctx,
 			rd:           rd,
-			stop:         stop,
 			minHits:      *minHits,
 			poll:         *poll,
 			jsonOut:      *jsonOut,
 			keepWatching: keepWatching,
 			ui:           ui,
 		})
-		proc.Close()
+		_ = rd.Close()
+		produced = produced || had
 		if errors.Is(err, osumem.ErrGone) {
 			if !*jsonOut {
 				ui.ProcessExited()
@@ -107,24 +128,27 @@ Offset to set in Options → Audio → Offset.
 			waitingLogged = true
 			continue
 		}
+		if err != nil && produced && errors.Is(err, errInterrupted) {
+			return nil
+		}
 		return err
 	}
 }
 
-func waitOrStop(stop <-chan os.Signal, d time.Duration) error {
+func waitOrStop(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
-	case <-stop:
-		return fmt.Errorf("stopped")
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-t.C:
 		return nil
 	}
 }
 
 type sessionOpts struct {
+	ctx          context.Context
 	rd           *osumem.Reader
-	stop         <-chan os.Signal
 	minHits      int
 	poll         time.Duration
 	jsonOut      bool
@@ -132,7 +156,7 @@ type sessionOpts struct {
 	ui           *tui.Display
 }
 
-func sampleSession(o sessionOpts) error {
+func sampleSession(o sessionOpts) (hadResult bool, err error) {
 	tick := time.NewTicker(o.poll)
 	defer tick.Stop()
 
@@ -145,27 +169,27 @@ func sampleSession(o sessionOpts) error {
 
 	for {
 		select {
-		case <-o.stop:
+		case <-o.ctx.Done():
 			if len(best) >= o.minHits {
-				return finish(o.rd, best, mapTitle, o.jsonOut, o.ui)
+				return true, finish(o.rd, best, mapTitle, o.jsonOut, o.ui)
 			}
 			if len(best) == 0 {
-				return fmt.Errorf("interrupted before any hits")
+				return hadResult, errInterrupted
 			}
-			return fmt.Errorf("interrupted with only %d hits (need %d)", len(best), o.minHits)
+			return hadResult, fmt.Errorf("interrupted with only %d hits (need %d)", len(best), o.minHits)
 		case <-tick.C:
 		}
 
 		if !o.rd.Alive() {
-			return osumem.ErrGone
+			return hadResult, osumem.ErrGone
 		}
 
 		st, err := o.rd.Status()
 		if err != nil {
 			if !o.rd.Alive() {
-				return osumem.ErrGone
+				return hadResult, osumem.ErrGone
 			}
-			return fmt.Errorf("read status: %w", err)
+			continue
 		}
 
 		playing := st == osumem.StatusPlaying && !o.rd.WatchingReplay()
@@ -174,17 +198,13 @@ func sampleSession(o sessionOpts) error {
 				inPlay = true
 				best = nil
 				mapTitle = readMapTitle(o.rd)
-				maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
 				if !o.jsonOut {
 					o.ui.PlayStarted(mapTitle)
 				}
 			}
 			if mapTitle == "" {
-				prev := beatmapWarned
 				mapTitle = readMapTitle(o.rd)
-				if !prev {
-					maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
-				}
+				maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
 			}
 			if mode, err := o.rd.Mode(); err == nil && mode != 0 {
 				if !o.jsonOut {
@@ -222,11 +242,8 @@ func sampleSession(o sessionOpts) error {
 		if inPlay {
 			inPlay = false
 			if mapTitle == "" {
-				prev := beatmapWarned
 				mapTitle = readMapTitle(o.rd)
-				if !prev {
-					maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
-				}
+				maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
 			}
 			if len(best) < o.minHits {
 				if !o.jsonOut {
@@ -236,36 +253,26 @@ func sampleSession(o sessionOpts) error {
 				mapTitle = ""
 				continue
 			}
-			if o.keepWatching {
-				if err := finish(o.rd, best, mapTitle, o.jsonOut, o.ui); err != nil {
-					return err
-				}
-				best = nil
-				mapTitle = ""
-				if !o.jsonOut {
-					o.ui.WatchingAnother()
-				}
-				continue
+			if err := finish(o.rd, best, mapTitle, o.jsonOut, o.ui); err != nil {
+				return hadResult, err
 			}
-			return finish(o.rd, best, mapTitle, o.jsonOut, o.ui)
+			hadResult = true
+			best = nil
+			mapTitle = ""
+			if !o.keepWatching {
+				return true, nil
+			}
+			if !o.jsonOut {
+				o.ui.WatchingAnother()
+			}
 		}
 	}
 }
 
-func round1(v float64) float64 { return math.Round(v*10) / 10 }
-
 func finish(rd *osumem.Reader, raw []int32, mapTitle string, jsonOut bool, ui *tui.Display) error {
-	timeout := 15 * time.Second
-	if _, ok := rd.LastOffset(); ok {
-		timeout = time.Second
-	}
-	cur, err := rd.OffsetWithRetry(timeout)
+	cur, err := rd.FinishOffset()
 	if err != nil {
-		last, ok := rd.LastOffset()
-		if !ok {
-			return err
-		}
-		cur = last
+		return err
 	}
 	if mapTitle == "" {
 		mapTitle = readMapTitle(rd)
@@ -277,25 +284,21 @@ func finish(rd *osumem.Reader, raw []int32, mapTitle string, jsonOut bool, ui *t
 	rec := hits.RoundOffset(hits.SuggestedOffset(float64(cur), med))
 
 	if jsonOut {
-		out := map[string]any{
-			"hits":               len(errors),
-			"median_ms":          round1(med),
-			"mean_ms":            round1(mean),
-			"unstable_rate":      round1(ur),
-			"current_offset":     cur,
-			"recommended_offset": rec,
-		}
-		if mapTitle != "" {
-			out["map"] = mapTitle
+		out := jsonResult{
+			Hits:              len(errors),
+			MedianMs:          hits.Round1(med),
+			MeanMs:            hits.Round1(mean),
+			UnstableRate:      hits.Round1(ur),
+			CurrentOffset:     cur,
+			RecommendedOffset: rec,
+			Map:               mapTitle,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	}
 
-	if !jsonOut {
-		ui.PlayEndedClear()
-	}
+	ui.PlayEndedClear()
 	ui.PrintResult(tui.Result{
 		Hits:          len(errors),
 		Median:        med,
@@ -318,7 +321,7 @@ func readMapTitle(rd *osumem.Reader) string {
 }
 
 func maybeWarnBeatmap(o sessionOpts, warned *bool, mapTitle string) {
-	if *warned || o.jsonOut || mapTitle != "" || o.rd.HasBeatmapBase() {
+	if *warned || o.jsonOut || mapTitle != "" {
 		return
 	}
 	*warned = true

@@ -119,3 +119,26 @@ func TestReaderBeatmapUnicodeFallback(t *testing.T) {
 		t.Fatalf("got %q want %q", got.Display(), want)
 	}
 }
+
+func TestReaderBeatmapFilenameFallback(t *testing.T) {
+	const (
+		base     int64 = 0x5000
+		indirect int64 = 0x5800
+		beatmap  int64 = 0x6000
+		file     int64 = 0x7300
+	)
+	p := memProc{mem: map[int64][]byte{}}
+	putI32(p, base-0xc, int32(indirect))
+	putI32(p, indirect, int32(beatmap))
+	putI32(p, beatmap+0x90, int32(file))
+	putString(p, file, "GHOST.osu")
+
+	rd := &Reader{proc: p, baseAddr: base}
+	got, err := rd.Beatmap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Display() != "GHOST" {
+		t.Fatalf("got %q", got.Display())
+	}
+}

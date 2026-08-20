@@ -7,8 +7,7 @@ import (
 )
 
 const (
-	StatusPlaying      = 2
-	StatusResultScreen = 7
+	StatusPlaying = 2
 
 	offsetReadRetryInterval = 200 * time.Millisecond
 	offsetReadTimeout       = 15 * time.Second
@@ -29,6 +28,7 @@ type Reader struct {
 	rulesetsAddr  int64
 	replayAddr    int64
 	baseAddr      int64
+	baseAddrs     []int64
 	configSigAddr int64
 	configPtr     int64
 	offsetIndex   int32
@@ -70,9 +70,9 @@ func Attach(p Process) (*Reader, error) {
 		rd.configTried = time.Now()
 	}
 	if baseErr != nil {
-		// Leave baseScanAt zero so Beatmap() retries soon; attach must not
-		// fail just because optional beatmap metadata is unavailable yet.
 		rd.baseAddr = 0
+	} else {
+		rd.baseAddrs = []int64{base}
 	}
 	return rd, nil
 }
@@ -119,6 +119,18 @@ func (r *Reader) Offset() (int32, error) {
 
 func (r *Reader) LastOffset() (int32, bool) {
 	return r.lastOffset, r.hasLastOffset
+}
+
+// FinishOffset returns the current Offset at play end. It prefers a fresh
+// read, then the last successful live value, then a longer retry for first attach.
+func (r *Reader) FinishOffset() (int32, error) {
+	if cur, err := r.Offset(); err == nil {
+		return cur, nil
+	}
+	if r.hasLastOffset {
+		return r.lastOffset, nil
+	}
+	return r.OffsetWithRetry(offsetReadTimeout)
 }
 
 func (r *Reader) ensureConfig() error {

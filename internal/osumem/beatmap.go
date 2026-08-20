@@ -2,6 +2,7 @@ package osumem
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -33,8 +34,11 @@ func (b Beatmap) Display() string {
 	}
 }
 
-// HasBeatmapBase reports whether the beatmap metadata signature has been found.
+// HasBeatmapBase reports whether a beatmap signature candidate is available.
 func (r *Reader) HasBeatmapBase() bool {
+	if r.baseAddr != 0 || len(r.baseAddrs) > 0 {
+		return true
+	}
 	return r.ensureBaseAddr()
 }
 
@@ -42,23 +46,61 @@ func (r *Reader) ensureBaseAddr() bool {
 	if r.baseAddr != 0 {
 		return true
 	}
+	return r.rescanBeatmapBases() == nil
+}
+
+func (r *Reader) rescanBeatmapBases() error {
 	if !r.baseScanAt.IsZero() && time.Since(r.baseScanAt) < 2*time.Second {
-		return false
+		return fmt.Errorf("beatmap base not available")
 	}
 	r.baseScanAt = time.Now()
-	base, err := Scan(r.proc, sigBase)
-	if err != nil {
-		return false
+	addrs, err := ScanAll(r.proc, sigBase, 24)
+	if err != nil || len(addrs) == 0 {
+		return fmt.Errorf("beatmap base not available")
 	}
-	r.baseAddr = base
-	return true
+	r.baseAddrs = addrs
+	if r.baseAddr == 0 {
+		r.baseAddr = addrs[0]
+	}
+	return nil
 }
 
 func (r *Reader) Beatmap() (Beatmap, error) {
-	if !r.ensureBaseAddr() {
-		return Beatmap{}, fmt.Errorf("beatmap base not available")
+	if b, ok := r.beatmapAt(r.baseAddr); ok {
+		return b, nil
 	}
-	return readBeatmapAt(r.proc, r.baseAddr)
+	for _, addr := range r.baseAddrs {
+		if addr == r.baseAddr {
+			continue
+		}
+		if b, ok := r.beatmapAt(addr); ok {
+			return b, nil
+		}
+	}
+	if err := r.rescanBeatmapBases(); err != nil {
+		if r.baseAddr == 0 && len(r.baseAddrs) == 0 {
+			return Beatmap{}, err
+		}
+		return Beatmap{}, fmt.Errorf("beatmap metadata empty")
+	}
+	for _, addr := range r.baseAddrs {
+		if b, ok := r.beatmapAt(addr); ok {
+			return b, nil
+		}
+	}
+	return Beatmap{}, fmt.Errorf("beatmap metadata empty")
+}
+
+func (r *Reader) beatmapAt(addr int64) (Beatmap, bool) {
+	if addr == 0 {
+		return Beatmap{}, false
+	}
+	b, err := readBeatmapAt(r.proc, addr)
+	if err != nil {
+		return Beatmap{}, false
+	}
+	r.baseAddr = addr
+	return b, true
 }
 
 func readBeatmapAt(proc Process, baseAddr int64) (Beatmap, error) {
@@ -92,7 +134,16 @@ func readBeatmapAt(proc Process, baseAddr int64) (Beatmap, error) {
 
 	b := Beatmap{Artist: artist, Title: title, Version: version}
 	if b.Display() == "" {
+		if fn := readField(0x90); looksLikeOsuFile(fn) {
+			b.Title = fn[:len(fn)-4]
+		}
+	}
+	if b.Display() == "" {
 		return Beatmap{}, fmt.Errorf("beatmap metadata empty")
 	}
 	return b, nil
+}
+
+func looksLikeOsuFile(name string) bool {
+	return len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".osu")
 }

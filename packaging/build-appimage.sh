@@ -15,7 +15,7 @@ mkdir -p "$appdir/usr/bin" "$appdir/usr/share/icons/hicolor/scalable/apps"
 
 install -m 0755 "$binary" "$appdir/usr/bin/osu-offset"
 chmod +x "$appdir/usr/bin/osu-offset"
-install -m 0644 "$root/packaging/osu-offset.desktop" "$appdir/osu-offset.desktop"
+install -m 0644 "$root/packaging/io.github.gaavin.osu-offset.desktop" "$appdir/osu-offset.desktop"
 install -m 0644 "$root/packaging/io.github.gaavin.osu-offset.svg" \
   "$appdir/usr/share/icons/hicolor/scalable/apps/io.github.gaavin.osu-offset.svg"
 cp "$appdir/usr/share/icons/hicolor/scalable/apps/io.github.gaavin.osu-offset.svg" \
