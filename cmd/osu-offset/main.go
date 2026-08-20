@@ -255,9 +255,17 @@ func sampleSession(o sessionOpts) error {
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
 func finish(rd *osumem.Reader, raw []int32, mapTitle string, jsonOut bool, ui *tui.Display) error {
-	cur, err := rd.OffsetWithRetry(15 * time.Second)
+	timeout := 15 * time.Second
+	if _, ok := rd.LastOffset(); ok {
+		timeout = time.Second
+	}
+	cur, err := rd.OffsetWithRetry(timeout)
 	if err != nil {
-		return err
+		last, ok := rd.LastOffset()
+		if !ok {
+			return err
+		}
+		cur = last
 	}
 	if mapTitle == "" {
 		mapTitle = readMapTitle(rd)

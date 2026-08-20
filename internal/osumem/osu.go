@@ -24,16 +24,19 @@ const (
 // Reader attaches to a running osu!stable process and reads the current
 // play's hit-error list (same List<int> the error bar uses).
 type Reader struct {
-	proc         Process
-	statusPtr    int64
-	rulesetsAddr int64
-	replayAddr   int64
-	baseAddr     int64
-	configPtr    int64
-	offsetIndex  int32
-	arrayStart   int64
-	configTried  time.Time
-	baseScanAt   time.Time
+	proc          Process
+	statusPtr     int64
+	rulesetsAddr  int64
+	replayAddr    int64
+	baseAddr      int64
+	configSigAddr int64
+	configPtr     int64
+	offsetIndex   int32
+	arrayStart    int64
+	lastOffset    int32
+	hasLastOffset bool
+	configTried   time.Time
+	baseScanAt    time.Time
 }
 
 func Attach(p Process) (*Reader, error) {
@@ -47,20 +50,21 @@ func Attach(p Process) (*Reader, error) {
 	}
 	replay, _ := Scan(p, sigReplay)
 	base, baseErr := Scan(p, sigBase)
-	configPtr, offsetIndex, cfgErr := resolveConfig(p)
+	configSig, configPtr, offsetIndex, cfgErr := resolveConfig(p)
 	arrayStart := int64(0x8)
 	if runtime.GOOS != "windows" {
 		arrayStart = 0xC
 	}
 	rd := &Reader{
-		proc:         p,
-		statusPtr:    statusPat - 0x4,
-		rulesetsAddr: rulesets,
-		replayAddr:   replay,
-		baseAddr:     base,
-		configPtr:    configPtr,
-		offsetIndex:  offsetIndex,
-		arrayStart:   arrayStart,
+		proc:          p,
+		statusPtr:     statusPat - 0x4,
+		rulesetsAddr:  rulesets,
+		replayAddr:    replay,
+		baseAddr:      base,
+		configSigAddr: configSig,
+		configPtr:     configPtr,
+		offsetIndex:   offsetIndex,
+		arrayStart:    arrayStart,
 	}
 	if cfgErr != nil {
 		rd.configTried = time.Now()
@@ -80,19 +84,73 @@ func (r *Reader) Pid() int { return r.proc.Pid() }
 func (r *Reader) Alive() bool { return r.proc.Alive() }
 
 func (r *Reader) Offset() (int32, error) {
-	if r.configPtr == 0 || r.offsetIndex < 0 {
-		if !r.configTried.IsZero() && time.Since(r.configTried) < 2*time.Second {
-			return 0, fmt.Errorf("configuration not ready")
+	if err := r.ensureConfig(); err != nil {
+		return 0, err
+	}
+
+	configPtr := r.configPtr
+	if r.configSigAddr != 0 {
+		// Follow the live global pointer each read. Caching the ConfigManager
+		// object address goes stale after .NET GC / results-screen allocs
+		// (Wine process_vm_readv then returns EFAULT / "bad address").
+		p, err := readPointer(r.proc, r.configSigAddr)
+		if err != nil || p == 0 {
+			return 0, fmt.Errorf("configuration pointer")
 		}
-		r.configTried = time.Now()
-		ptr, idx, err := resolveConfig(r.proc)
+		configPtr = p
+		r.configPtr = p
+	}
+
+	v, err := readConfigInt(r.proc, configPtr, r.offsetIndex)
+	if err != nil && r.configSigAddr != 0 {
+		idx, ierr := findConfigOffsetIndex(r.proc, configPtr)
+		if ierr == nil {
+			r.offsetIndex = idx
+			v, err = readConfigInt(r.proc, configPtr, r.offsetIndex)
+		}
+	}
+	if err != nil {
+		return 0, err
+	}
+	r.lastOffset = v
+	r.hasLastOffset = true
+	return v, nil
+}
+
+func (r *Reader) LastOffset() (int32, bool) {
+	return r.lastOffset, r.hasLastOffset
+}
+
+func (r *Reader) ensureConfig() error {
+	if r.configSigAddr != 0 && r.offsetIndex >= 0 {
+		return nil
+	}
+	if r.configPtr != 0 && r.offsetIndex >= 0 {
+		return nil
+	}
+	if r.configSigAddr != 0 {
+		ptr, idx, err := configAt(r.proc, r.configSigAddr)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		r.configPtr = ptr
 		r.offsetIndex = idx
+		return nil
 	}
-	return readConfigInt(r.proc, r.configPtr, r.offsetIndex)
+	if !r.configTried.IsZero() && time.Since(r.configTried) < 2*time.Second {
+		return fmt.Errorf("configuration not ready")
+	}
+	r.configTried = time.Now()
+	sig, ptr, idx, err := resolveConfig(r.proc)
+	if sig != 0 {
+		r.configSigAddr = sig
+	}
+	if err != nil {
+		return err
+	}
+	r.configPtr = ptr
+	r.offsetIndex = idx
+	return nil
 }
 
 // OffsetWithRetry polls Offset until it succeeds or timeout elapses.

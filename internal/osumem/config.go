@@ -13,8 +13,11 @@ const (
 
 func readPointer(r Process, addr int64) (int64, error) {
 	p, err := ReadPtr32(r, addr)
-	if err != nil || p == 0 {
+	if err != nil {
 		return 0, err
+	}
+	if p == 0 {
+		return 0, fmt.Errorf("null pointer at 0x%x", addr)
 	}
 	return ReadPtr32(r, p)
 }
@@ -90,13 +93,8 @@ func readConfigInt(r Process, configPtr int64, index int32) (int32, error) {
 	return int32(math.Round(v)), nil
 }
 
-func resolveConfig(r Process) (configPtr int64, offsetIndex int32, err error) {
-	addr, err := Scan(r, sigConfiguration)
-	if err != nil {
-		return 0, -1, fmt.Errorf("configuration signature: %w", err)
-	}
-	addr += configPatternOff
-	configPtr, err = readPointer(r, addr)
+func configAt(r Process, sigAddr int64) (configPtr int64, offsetIndex int32, err error) {
+	configPtr, err = readPointer(r, sigAddr)
 	if err != nil || configPtr == 0 {
 		return 0, -1, fmt.Errorf("configuration pointer")
 	}
@@ -105,4 +103,14 @@ func resolveConfig(r Process) (configPtr int64, offsetIndex int32, err error) {
 		return 0, -1, err
 	}
 	return configPtr, offsetIndex, nil
+}
+
+func resolveConfig(r Process) (sigAddr, configPtr int64, offsetIndex int32, err error) {
+	addr, err := Scan(r, sigConfiguration)
+	if err != nil {
+		return 0, 0, -1, fmt.Errorf("configuration signature: %w", err)
+	}
+	addr += configPatternOff
+	configPtr, offsetIndex, err = configAt(r, addr)
+	return addr, configPtr, offsetIndex, err
 }

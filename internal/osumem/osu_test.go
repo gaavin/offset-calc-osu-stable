@@ -89,3 +89,64 @@ func TestReadConfigIntBindableMissing(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func setupOffsetConfigWithSig(p memProc, bindableAddr int64, offsetValue float64) (sigAddr, configPtr int64, offsetIndex int32) {
+	configPtr, offsetIndex = setupOffsetConfig(p, bindableAddr, offsetValue)
+	const (
+		sig int64 = 0x1000
+		mid int64 = 0x1100
+	)
+	putI32(p, sig, int32(mid))
+	putI32(p, mid, int32(configPtr))
+	return sig, configPtr, offsetIndex
+}
+
+func TestOffsetFollowsLiveConfigPointer(t *testing.T) {
+	p := memProc{mem: map[int64][]byte{}}
+	sigAddr, configPtr, offsetIndex := setupOffsetConfigWithSig(p, 0x5000, -30)
+
+	rd := &Reader{
+		proc:          p,
+		configSigAddr: sigAddr,
+		configPtr:     0x1, // not a valid ConfigManager — must not be used
+		offsetIndex:   offsetIndex,
+	}
+
+	cur, err := rd.Offset()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur != -30 {
+		t.Fatalf("offset %d", cur)
+	}
+	if rd.configPtr != configPtr {
+		t.Fatalf("configPtr 0x%x want 0x%x", rd.configPtr, configPtr)
+	}
+	last, ok := rd.LastOffset()
+	if !ok || last != -30 {
+		t.Fatalf("LastOffset %d ok=%v", last, ok)
+	}
+}
+
+func TestOffsetReloadsIndexWhenSlotMoves(t *testing.T) {
+	p := memProc{mem: map[int64][]byte{}}
+	sigAddr, configPtr, _ := setupOffsetConfigWithSig(p, 0x5000, -30)
+
+	rd := &Reader{
+		proc:          p,
+		configSigAddr: sigAddr,
+		configPtr:     configPtr,
+		offsetIndex:   99, // wrong cached index
+	}
+
+	cur, err := rd.Offset()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur != -30 {
+		t.Fatalf("offset %d", cur)
+	}
+	if rd.offsetIndex != 0 {
+		t.Fatalf("index %d", rd.offsetIndex)
+	}
+}

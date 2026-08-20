@@ -58,22 +58,37 @@ func (r *Reader) Beatmap() (Beatmap, error) {
 	if !r.ensureBaseAddr() {
 		return Beatmap{}, fmt.Errorf("beatmap base not available")
 	}
-	beatmapAddr, err := ReadPtr32(r.proc, r.baseAddr-0xc)
+	return readBeatmapAt(r.proc, r.baseAddr)
+}
+
+func readBeatmapAt(proc Process, baseAddr int64) (Beatmap, error) {
+	// tosu: beatmapAddr = readPointer(baseAddr - 0xC) = [[baseAddr - 0xC]]
+	beatmapAddr, err := readPointer(proc, baseAddr-0xc)
 	if err != nil || beatmapAddr == 0 {
 		return Beatmap{}, fmt.Errorf("beatmap pointer")
 	}
 
-	readField := func(off int64) (string, error) {
-		ptr, err := ReadPtr32(r.proc, beatmapAddr+off)
+	readField := func(off int64) string {
+		ptr, err := ReadPtr32(proc, beatmapAddr+off)
 		if err != nil || ptr == 0 {
-			return "", err
+			return ""
 		}
-		return readSharpString(r.proc, ptr)
+		s, err := readSharpString(proc, ptr)
+		if err != nil {
+			return ""
+		}
+		return s
 	}
 
-	artist, _ := readField(0x18)
-	title, _ := readField(0x24)
-	version, _ := readField(0xac)
+	artist := readField(0x18)
+	if artist == "" {
+		artist = readField(0x1c) // ArtistUnicode
+	}
+	title := readField(0x24)
+	if title == "" {
+		title = readField(0x28) // TitleUnicode
+	}
+	version := readField(0xac)
 
 	b := Beatmap{Artist: artist, Title: title, Version: version}
 	if b.Display() == "" {
