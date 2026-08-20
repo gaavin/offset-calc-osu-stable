@@ -17,14 +17,21 @@ Works with [nix-osu-stable](https://github.com/gaavin/nix-osu-stable) on NixOS, 
 **Already have a release binary or Nix?**
 
 ```bash
-osu-offset          # watch osu!.exe; print after every usable play
+osu-offset          # watch osu!.exe; dashboard after every usable play
 ```
 
 1. Launch osu!stable (or start `osu-offset` first — it waits for `osu!.exe`).
 2. Play a map with at least **50 timed hits** (standard mode).
-3. When the play ends, copy the printed Offset into **Options → Audio → Offset**.
+3. When the play ends, read the **Recommended Offset** and set it in **Options → Audio → Offset**.
+
+In a terminal, `osu-offset` prints a live dashboard after each usable play:
 
 ![osu-offset example output](assets/osu-offset-example.png)
+
+- **Recommended Offset** — large headline value to copy into the game
+- **Hit error distribution** — histogram of your timing with the median marked
+- **Recommendation** — map title, hit count, median/mean error, UR, current vs recommended offset, and plain-language advice
+- **Offset calibration** — slider showing where you are vs where to move, with `recommended = current − median`
 
 ---
 
@@ -35,9 +42,9 @@ osu-offset          # watch osu!.exe; print after every usable play
 • Attach to running <code>osu!.exe</code> (Windows, or Wine on Linux / NixOS)<br/>
 • Read the current universal Offset from memory (updates when you change it in-game)<br/>
 • Read the current play's hit-error list from memory<br/>
-• Take the <strong>median</strong> error (≥ 50 timed hits)<br/>
-• Print: <code>currentOffset − medianError</code><br/>
-• Keep watching — re-attach if osu! restarts
+• After the play ends with ≥ 50 timed hits, render a dashboard:<br/>
+&nbsp;&nbsp;— hit-error histogram, stats (median, mean, UR), and <code>recommended = current − median</code><br/>
+• Skip short plays and keep watching — re-attach if osu! restarts
 </div>
 
 That reflects the Offset and audio setup you have **right now**.
