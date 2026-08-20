@@ -4,7 +4,7 @@
   <name>osu-offset</name>
   <summary>Recommend a universal Offset for osu!stable from live hit error</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LicenseRef-unspecified</project_license>
+  <project_license>GPL-3.0-only</project_license>
   <description>
     <p>
       Watches running osu!stable processes, reads live hit error from memory

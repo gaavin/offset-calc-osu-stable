@@ -29,6 +29,7 @@
             env.CGO_ENABLED = "0";
             meta = {
               description = "Watch osu!.exe and recommend Offset from live hit error";
+              license = lib.licenses.gpl3Only;
               mainProgram = "osu-offset";
             };
           };
