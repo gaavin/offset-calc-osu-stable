@@ -3,6 +3,7 @@ package osumem
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 )
 
 func putString(p memProc, addr int64, s string) {
@@ -28,6 +29,17 @@ func TestBeatmapDisplay(t *testing.T) {
 		if got := tc.b.Display(); got != tc.want {
 			t.Fatalf("%+v: got %q want %q", tc.b, got, tc.want)
 		}
+	}
+}
+
+func TestReaderBeatmapNoBase(t *testing.T) {
+	rd := &Reader{proc: memProc{mem: map[int64][]byte{}}, baseScanAt: time.Now()}
+	_, err := rd.Beatmap()
+	if err == nil {
+		t.Fatal("expected error without base address")
+	}
+	if rd.HasBeatmapBase() {
+		t.Fatal("expected HasBeatmapBase false")
 	}
 }
 

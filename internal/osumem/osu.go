@@ -30,6 +30,7 @@ type Reader struct {
 	offsetIndex  int32
 	arrayStart   int64
 	configTried  time.Time
+	baseScanAt   time.Time
 }
 
 func Attach(p Process) (*Reader, error) {
@@ -42,7 +43,7 @@ func Attach(p Process) (*Reader, error) {
 		return nil, fmt.Errorf("rulesets signature: %w", err)
 	}
 	replay, _ := Scan(p, sigReplay)
-	base, _ := Scan(p, sigBase)
+	base, baseErr := Scan(p, sigBase)
 	configPtr, offsetIndex, cfgErr := resolveConfig(p)
 	arrayStart := int64(0x8)
 	if runtime.GOOS != "windows" {
@@ -60,6 +61,11 @@ func Attach(p Process) (*Reader, error) {
 	}
 	if cfgErr != nil {
 		rd.configTried = time.Now()
+	}
+	if baseErr != nil {
+		// Leave baseScanAt zero so Beatmap() retries soon; attach must not
+		// fail just because optional beatmap metadata is unavailable yet.
+		rd.baseAddr = 0
 	}
 	return rd, nil
 }

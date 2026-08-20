@@ -94,7 +94,17 @@ func (d *Display) PlayStarted(mapTitle string) {
 	}
 	if mapTitle != "" {
 		pterm.Info.Printfln("Playing: %s", mapTitle)
+	} else {
+		pterm.Info.Println("Playing…")
 	}
+}
+
+func (d *Display) BeatmapUnavailable() {
+	if !d.fancy {
+		fmt.Fprintln(d.stderr, "note: map title unavailable (beatmap memory signature not found; will retry)")
+		return
+	}
+	pterm.Warning.Println("Map title unavailable — beatmap memory signature not found (will retry)")
 }
 
 func (d *Display) SkipMode(mode int32) {

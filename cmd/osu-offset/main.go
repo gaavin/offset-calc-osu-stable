@@ -137,9 +137,10 @@ func sampleSession(o sessionOpts) error {
 	defer tick.Stop()
 
 	var (
-		inPlay   bool
-		best     []int32
-		mapTitle string
+		inPlay        bool
+		best          []int32
+		mapTitle      string
+		beatmapWarned bool
 	)
 
 	for {
@@ -173,12 +174,17 @@ func sampleSession(o sessionOpts) error {
 				inPlay = true
 				best = nil
 				mapTitle = readMapTitle(o.rd)
+				maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
 				if !o.jsonOut {
 					o.ui.PlayStarted(mapTitle)
 				}
 			}
 			if mapTitle == "" {
+				prev := beatmapWarned
 				mapTitle = readMapTitle(o.rd)
+				if !prev {
+					maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
+				}
 			}
 			if mode, err := o.rd.Mode(); err == nil && mode != 0 {
 				if !o.jsonOut {
@@ -216,7 +222,11 @@ func sampleSession(o sessionOpts) error {
 		if inPlay {
 			inPlay = false
 			if mapTitle == "" {
+				prev := beatmapWarned
 				mapTitle = readMapTitle(o.rd)
+				if !prev {
+					maybeWarnBeatmap(o, &beatmapWarned, mapTitle)
+				}
 			}
 			if len(best) < o.minHits {
 				if !o.jsonOut {
@@ -297,4 +307,12 @@ func readMapTitle(rd *osumem.Reader) string {
 		return ""
 	}
 	return b.Display()
+}
+
+func maybeWarnBeatmap(o sessionOpts, warned *bool, mapTitle string) {
+	if *warned || o.jsonOut || mapTitle != "" || o.rd.HasBeatmapBase() {
+		return
+	}
+	*warned = true
+	o.ui.BeatmapUnavailable()
 }

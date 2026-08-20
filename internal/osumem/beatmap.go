@@ -1,6 +1,9 @@
 package osumem
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Beatmap holds metadata for the map currently loaded in osu!stable.
 type Beatmap struct {
@@ -30,8 +33,29 @@ func (b Beatmap) Display() string {
 	}
 }
 
+// HasBeatmapBase reports whether the beatmap metadata signature has been found.
+func (r *Reader) HasBeatmapBase() bool {
+	return r.ensureBaseAddr()
+}
+
+func (r *Reader) ensureBaseAddr() bool {
+	if r.baseAddr != 0 {
+		return true
+	}
+	if !r.baseScanAt.IsZero() && time.Since(r.baseScanAt) < 2*time.Second {
+		return false
+	}
+	r.baseScanAt = time.Now()
+	base, err := Scan(r.proc, sigBase)
+	if err != nil {
+		return false
+	}
+	r.baseAddr = base
+	return true
+}
+
 func (r *Reader) Beatmap() (Beatmap, error) {
-	if r.baseAddr == 0 {
+	if !r.ensureBaseAddr() {
 		return Beatmap{}, fmt.Errorf("beatmap base not available")
 	}
 	beatmapAddr, err := ReadPtr32(r.proc, r.baseAddr-0xc)
