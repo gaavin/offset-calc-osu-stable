@@ -182,18 +182,46 @@ func (d *Display) printFancyResult(r Result) {
 		{{Data: chart}, {Data: summary}},
 	}).Srender()
 
-	big, _ := pterm.DefaultBigText.WithLetters(
-		pterm.NewLettersFromStringWithStyle(fmt.Sprintf("%d ms", r.Recommend), pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)),
-	).Srender()
-	boxed := pterm.DefaultBox.WithTitle("Recommended Offset").
-		WithTitleTopCenter().
-		WithBoxStyle(pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)).
-		Sprint(big)
-
-	fmt.Fprintln(d.stdout)
-	fmt.Fprintln(d.stdout, boxed)
+	big, err := renderRecommendedOffsetText(r.Recommend)
+	if err != nil {
+		fmt.Fprintln(d.stdout, fmt.Sprintf("Recommended Offset: %d ms", r.Recommend))
+	} else {
+		fmt.Fprintln(d.stdout)
+		fmt.Fprintln(d.stdout, big)
+	}
 	fmt.Fprintln(d.stdout, panels)
 	fmt.Fprintln(d.stdout, pterm.Info.Sprint("Set it in Options → Audio → Offset."))
+}
+
+func renderRecommendedOffsetText(recommend int) (string, error) {
+	big, err := pterm.DefaultBigText.WithLetters(
+		pterm.NewLettersFromStringWithStyle(fmt.Sprintf("%d ms", recommend), pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)),
+	).Srender()
+	if err != nil {
+		return "", err
+	}
+	big = trimGraphicBlock(big)
+	return pterm.DefaultBox.WithTitle("Recommended Offset").
+		WithTitleTopCenter().
+		WithBoxStyle(pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)).
+		WithTopPadding(1).
+		WithBottomPadding(1).
+		Sprint(big), nil
+}
+
+func trimGraphicBlock(s string) string {
+	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+	for len(lines) > 0 && isBlankGraphicLine(lines[0]) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && isBlankGraphicLine(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func isBlankGraphicLine(s string) bool {
+	return strings.TrimSpace(pterm.RemoveColorFromString(s)) == ""
 }
 
 func renderLive(s PlayStats) string {
