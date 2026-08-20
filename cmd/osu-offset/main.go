@@ -255,9 +255,9 @@ func sampleSession(o sessionOpts) error {
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
 func finish(rd *osumem.Reader, raw []int32, mapTitle string, jsonOut bool, ui *tui.Display) error {
-	cur, err := rd.Offset()
+	cur, err := rd.OffsetWithRetry(15 * time.Second)
 	if err != nil {
-		return fmt.Errorf("read offset: %w", err)
+		return err
 	}
 	if mapTitle == "" {
 		mapTitle = readMapTitle(rd)

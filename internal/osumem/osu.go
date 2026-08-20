@@ -9,6 +9,9 @@ import (
 const (
 	StatusPlaying      = 2
 	StatusResultScreen = 7
+
+	offsetReadRetryInterval = 200 * time.Millisecond
+	offsetReadTimeout       = 15 * time.Second
 )
 
 const (
@@ -90,6 +93,27 @@ func (r *Reader) Offset() (int32, error) {
 		r.offsetIndex = idx
 	}
 	return readConfigInt(r.proc, r.configPtr, r.offsetIndex)
+}
+
+// OffsetWithRetry polls Offset until it succeeds or timeout elapses.
+// Use at play end when the bindable may not be readable yet on first attach.
+func (r *Reader) OffsetWithRetry(timeout time.Duration) (int32, error) {
+	if timeout <= 0 {
+		timeout = offsetReadTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		cur, err := r.Offset()
+		if err == nil {
+			return cur, nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("read offset: %w", lastErr)
+		}
+		time.Sleep(offsetReadRetryInterval)
+	}
 }
 
 func (r *Reader) Status() (int32, error) {
