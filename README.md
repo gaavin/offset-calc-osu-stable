@@ -26,7 +26,7 @@ osu-offset          # watch osu!.exe; dashboard after every usable play
 
 In a terminal, `osu-offset` prints a live dashboard after each usable play:
 
-![osu-offset example output](assets/osu-offset-example.png)
+![osu-offset terminal dashboard](assets/osu-offset-dashboard.png)
 
 - **Recommended Offset** — large headline value to copy into the game
 - **Hit error distribution** — histogram of your timing with the median marked
