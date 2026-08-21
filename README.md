@@ -6,7 +6,7 @@ Recommend a universal Offset for osu!stable from live hit error.
 [![Release](https://img.shields.io/github/v/release/gaavin/offset-calc-osu-stable?label=release)](https://github.com/gaavin/offset-calc-osu-stable/releases)
 [![Nix](https://img.shields.io/badge/Nix-flake-success?logo=NixOS)](https://nixos.org)
 
-Attaches to `osu!.exe` (Windows, or Wine on Linux / NixOS), reads the current play’s hit errors and Offset from memory, and prints `recommended = current − median` after each standard play with at least 50 timed hits. On Wine, audio is usually late, so the suggestion is often negative. macOS binaries build but cannot attach.
+Attaches to `osu!.exe` (Windows, or Wine on Linux / NixOS), reads the current play’s hit errors and Offset from memory, and prints `recommended = current − median` after each standard play with at least 50 timed hits. On Wine, audio is usually late, so the suggestion is often negative.
 
 ```bash
 osu-offset
@@ -64,18 +64,11 @@ Download from the [latest release](https://github.com/gaavin/offset-calc-osu-sta
 | Platform | Artifact |
 | --- | --- |
 | Windows | `osu-offset-windows-amd64.exe`, `osu-offset-windows-arm64.exe` |
-| macOS | `osu-offset-darwin-amd64`, `osu-offset-darwin-arm64` |
-| Linux | `osu-offset-x86_64.AppImage`, `osu-offset-aarch64.AppImage` |
-| Linux (Flatpak) | `osu-offset-x86_64.flatpak`, `osu-offset-aarch64.flatpak` |
-
-Plain `osu-offset-<os>-<arch>` binaries (`amd64` + `arm64`) are attached as well.
+| Linux | `osu-offset-linux-amd64`, `osu-offset-linux-arm64` |
 
 ```bash
-chmod +x osu-offset-x86_64.AppImage
-./osu-offset-x86_64.AppImage
-
-flatpak install --user ./osu-offset-x86_64.flatpak
-flatpak run io.github.gaavin.osu-offset
+chmod +x osu-offset-linux-amd64
+./osu-offset-linux-amd64
 ```
 
 ### From source
@@ -84,7 +77,7 @@ flatpak run io.github.gaavin.osu-offset
 go build -o osu-offset ./cmd/osu-offset
 
 GOOS=windows GOARCH=amd64 go build -o osu-offset.exe ./cmd/osu-offset
-GOOS=darwin  GOARCH=arm64 go build -o osu-offset ./cmd/osu-offset
+GOOS=linux   GOARCH=arm64 go build -o osu-offset ./cmd/osu-offset
 ```
 
 Cross-compiles use `CGO_ENABLED=0`.
