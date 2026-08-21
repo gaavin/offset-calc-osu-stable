@@ -6,7 +6,7 @@ Recommend a universal Offset for osu!stable from live hit error.
 [![Release](https://img.shields.io/github/v/release/gaavin/offset-calc-osu-stable?label=release)](https://github.com/gaavin/offset-calc-osu-stable/releases)
 [![Nix](https://img.shields.io/badge/Nix-flake-success?logo=NixOS)](https://nixos.org)
 
-Attaches to `osu!.exe` (Windows, or Wine on Linux / NixOS), reads the current play’s hit errors and Offset from memory, and prints `recommended = current − median` after each standard play with at least 50 timed hits. On Wine, audio is usually late, so the suggestion is often negative.
+Attaches to `osu!.exe` (Windows, or Wine on Linux), reads the current play’s hit errors and Offset from memory, and prints `recommended = current − median` after each standard play with at least 50 timed hits. On Wine, audio is usually late, so the suggestion is often negative.
 
 ```bash
 osu-offset
