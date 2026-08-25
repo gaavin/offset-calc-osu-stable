@@ -57,7 +57,7 @@ Then run `osu-offset` alongside `osu-wine`. See the [nix-osu-stable README](http
 
 ### Release binaries
 
-Every push to `master` publishes a GitHub Release tagged `vYYYY-MM-DD-HHMMSS` (UTC commit time). Tags and assets are never overwritten.
+Pushes to `master` that change Go source or modules publish a GitHub Release tagged `vYYYY-MM-DD-HHMMSS` (UTC commit time). Docs, assets, and other non-binary paths are skipped. Tags and assets are never overwritten.
 
 Download from the [latest release](https://github.com/gaavin/offset-calc-osu-stable/releases):
 
