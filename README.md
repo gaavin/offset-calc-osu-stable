@@ -8,9 +8,6 @@ Recommend a universal Offset for osu!stable from live hit error.
 
 Attaches to `osu!.exe` (Windows, or Wine on Linux), reads the current play’s hit errors and Offset from memory, and prints `recommended = current − median` after each standard play with at least 50 timed hits. On Wine, audio is usually late, so the suggestion is often negative.
 
-> [!WARNING]
-> **This project was primarily written by an LLM (AI). Review the code yourself before running it. Use at your own risk.**
-
 ```bash
 osu-offset
 ```
