@@ -26,7 +26,7 @@ func (p winProc) Alive() bool {
 	if err := windows.GetExitCodeProcess(p.handle, &code); err != nil {
 		return false
 	}
-	return code == windows.STILL_ACTIVE
+	return code == 259 // STILL_ACTIVE / STATUS_PENDING
 }
 
 func (p winProc) ReadAt(b []byte, off int64) (int, error) {
