@@ -22,8 +22,11 @@ func (p winProc) Close() error {
 }
 
 func (p winProc) Alive() bool {
-	ev, err := windows.WaitForSingleObject(p.handle, 0)
-	return err == nil && ev == uint32(windows.WAIT_TIMEOUT)
+	var code uint32
+	if err := windows.GetExitCodeProcess(p.handle, &code); err != nil {
+		return false
+	}
+	return code == windows.STILL_ACTIVE
 }
 
 func (p winProc) ReadAt(b []byte, off int64) (int, error) {
@@ -106,7 +109,7 @@ func findOsuProcess() (Process, error) {
 		name := windows.UTF16ToString(entry.ExeFile[:])
 		if strings.EqualFold(name, "osu!.exe") {
 			h, err := windows.OpenProcess(
-				windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION,
+				windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION|windows.SYNCHRONIZE,
 				false,
 				entry.ProcessID,
 			)
