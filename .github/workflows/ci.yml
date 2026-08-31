@@ -3,7 +3,15 @@ name: CI
 on:
   push:
     branches: [master, main]
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
   pull_request:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
 
 jobs:
   test:
